@@ -3,13 +3,31 @@
 require_once '../config.php';
 
 // Function to fetch data from TMDB API
-function fetchTMDB($endpoint, $apiKey) {
-    $url = "https://api.themoviedb.org/3{$endpoint}?api_key={$apiKey}&append_to_response=credits,videos,release_dates";
+function fetchTMDB($endpoint, $apiKey, $params = []) {
+    $base_url = "https://api.themoviedb.org/3";
+
+    // Add required parameters
+    $params['api_key'] = $apiKey;
+    if (!isset($params['append_to_response'])) {
+        $params['append_to_response'] = 'credits,videos,release_dates';
+    }
+
+    $queryString = http_build_query($params);
+    $url = "{$base_url}{$endpoint}?{$queryString}";
+
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'CineCrazePHPApp/1.0'); // Good practice to set a user agent
     $output = curl_exec($ch);
+    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+
+    if ($httpcode != 200) {
+        // Log error or handle it appropriately
+        return ['error' => 'TMDB API request failed', 'status_code' => $httpcode, 'response' => json_decode($output, true)];
+    }
+
     return json_decode($output, true);
 }
 
@@ -20,7 +38,7 @@ function addMovieFromTmdb($tmdbId) {
     $apiKey = 'ec926176bf467b3f7735e3154238c161';
     $movieData = fetchTMDB("/movie/{$tmdbId}", $apiKey);
 
-    if (!$movieData || isset($movieData['success']) && !$movieData['success']) {
+    if (!$movieData || !empty($movieData['error'])) {
         return "Error: Could not fetch data for TMDB ID: {$tmdbId}. The ID might be invalid or the API key is wrong.";
     }
 
@@ -119,7 +137,7 @@ function addSeriesFromTmdb($tmdbId, $seasonsInput = '') {
     $apiKey = 'ec926176bf467b3f7735e3154238c161';
     $seriesData = fetchTMDB("/tv/{$tmdbId}", $apiKey);
 
-    if (!$seriesData || isset($seriesData['success']) && !$seriesData['success']) {
+    if (!$seriesData || !empty($seriesData['error'])) {
         return "Error: Could not fetch data for TV Series TMDB ID: {$tmdbId}.";
     }
 
@@ -186,7 +204,7 @@ function addSeriesFromTmdb($tmdbId, $seasonsInput = '') {
         // Process each season and its episodes
         foreach ($seasonsToFetch as $seasonNumber) {
             $seasonData = fetchTMDB("/tv/{$tmdbId}/season/{$seasonNumber}", $apiKey);
-            if (!$seasonData) continue;
+            if (!$seasonData || !empty($seasonData['error'])) continue;
 
             // Insert season
             $stmt = $pdo->prepare("INSERT INTO seasons (content_id, season_number, title, poster_url) VALUES (?, ?, ?, ?)");
