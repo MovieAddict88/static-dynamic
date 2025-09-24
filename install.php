@@ -139,6 +139,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                   `name` varchar(100) NOT NULL,
                   `url` text NOT NULL,
                   `quality` varchar(50) DEFAULT NULL,
+                  `drm` tinyint(1) NOT NULL DEFAULT '0',
+                  `license_url` text,
                   PRIMARY KEY (`id`),
                   KEY `content_id` (`content_id`),
                   KEY `episode_id` (`episode_id`),

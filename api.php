@@ -66,9 +66,13 @@ function getAllContent() {
 
             if ($content['type'] === 'movie' || $content['type'] === 'live') {
                 // Fetch servers for movies and live TV
-                $serverStmt = $pdo->prepare("SELECT name, url FROM servers WHERE content_id = ?");
+                $serverStmt = $pdo->prepare("SELECT name, url, drm, license_url as license FROM servers WHERE content_id = ?");
                 $serverStmt->execute([$content['id']]);
-                $entry['Servers'] = $serverStmt->fetchAll();
+                $entry['Servers'] = $serverStmt->fetchAll(PDO::FETCH_ASSOC);
+                // Cast drm to boolean
+                foreach ($entry['Servers'] as &$server) {
+                    $server['drm'] = (bool)$server['drm'];
+                }
             } elseif ($content['type'] === 'series') {
                 // Fetch seasons and episodes for series
                 $seasonStmt = $pdo->prepare("SELECT id, season_number, title, poster_url FROM seasons WHERE content_id = ? ORDER BY season_number");
@@ -96,9 +100,13 @@ function getAllContent() {
                         ];
 
                         // Fetch servers for this episode
-                        $epServerStmt = $pdo->prepare("SELECT name, url FROM servers WHERE episode_id = ?");
+                        $epServerStmt = $pdo->prepare("SELECT name, url, drm, license_url as license FROM servers WHERE episode_id = ?");
                         $epServerStmt->execute([$episode['id']]);
-                        $episodeEntry['Servers'] = $epServerStmt->fetchAll();
+                        $episodeEntry['Servers'] = $epServerStmt->fetchAll(PDO::FETCH_ASSOC);
+                        // Cast drm to boolean
+                        foreach ($episodeEntry['Servers'] as &$server) {
+                            $server['drm'] = (bool)$server['drm'];
+                        }
 
                         $seasonEntry['Episodes'][] = $episodeEntry;
                     }

@@ -7,7 +7,6 @@ function handle_json_import($file) {
         return "Error: Database connection failed.";
     }
 
-    // File validation
     if ($file['error'] !== UPLOAD_ERR_OK) {
         return "File upload error. Code: " . $file['error'];
     }
@@ -38,10 +37,9 @@ function handle_json_import($file) {
             if ($mainCategory === 'Movies') $type = 'movie';
             elseif ($mainCategory === 'TV Series') $type = 'series';
             elseif ($mainCategory === 'Live TV') $type = 'live';
-            else continue; // Skip unknown categories
+            else continue;
 
             foreach ($category['Entries'] as $entry) {
-                // Check for duplicates by title and year
                 $stmt = $pdo->prepare("SELECT id FROM content WHERE title = ? AND release_year = ?");
                 $stmt->execute([$entry['Title'], $entry['Year'] ?? null]);
                 if ($stmt->fetch()) {
@@ -49,33 +47,19 @@ function handle_json_import($file) {
                     continue;
                 }
 
-                // Insert content
-                $stmt = $pdo->prepare(
-                    "INSERT INTO content (type, title, description, poster_url, thumbnail_url, release_year, rating, duration, parental_rating)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                );
-                $stmt->execute([
-                    $type,
-                    $entry['Title'],
-                    $entry['Description'] ?? null,
-                    $entry['Poster'] ?? null,
-                    $entry['Thumbnail'] ?? null,
-                    $entry['Year'] ?? null,
-                    $entry['Rating'] ?? null,
-                    $entry['Duration'] ?? null,
-                    $entry['parentalRating'] ?? null
-                ]);
+                $stmt = $pdo->prepare("INSERT INTO content (type, title, description, poster_url, thumbnail_url, release_year, rating, duration, parental_rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([ $type, $entry['Title'], $entry['Description'] ?? null, $entry['Poster'] ?? null, $entry['Thumbnail'] ?? null, $entry['Year'] ?? null, $entry['Rating'] ?? null, $entry['Duration'] ?? null, $entry['parentalRating'] ?? null ]);
                 $contentId = $pdo->lastInsertId();
 
-                // Insert servers for movies/live
                 if (($type === 'movie' || $type === 'live') && !empty($entry['Servers'])) {
+                    $s_stmt = $pdo->prepare("INSERT INTO servers (content_id, name, url, drm, license_url) VALUES (?, ?, ?, ?, ?)");
                     foreach ($entry['Servers'] as $server) {
-                        $s_stmt = $pdo->prepare("INSERT INTO servers (content_id, name, url) VALUES (?, ?, ?)");
-                        $s_stmt->execute([$contentId, $server['name'], $server['url']]);
+                        $drm = isset($server['drm']) && $server['drm'] === true;
+                        $license_url = $drm ? ($server['license'] ?? null) : null;
+                        $s_stmt->execute([$contentId, $server['name'], $server['url'], $drm, $license_url]);
                     }
                 }
 
-                // Insert seasons and episodes for series
                 if ($type === 'series' && !empty($entry['Seasons'])) {
                     foreach ($entry['Seasons'] as $seasonData) {
                         $season_stmt = $pdo->prepare("INSERT INTO seasons (content_id, season_number, title, poster_url) VALUES (?, ?, ?, ?)");
@@ -89,9 +73,11 @@ function handle_json_import($file) {
                                 $episodeId = $pdo->lastInsertId();
 
                                 if (!empty($episodeData['Servers'])) {
+                                    $s_stmt = $pdo->prepare("INSERT INTO servers (episode_id, name, url, drm, license_url) VALUES (?, ?, ?, ?, ?)");
                                     foreach ($episodeData['Servers'] as $server) {
-                                        $s_stmt = $pdo->prepare("INSERT INTO servers (episode_id, name, url) VALUES (?, ?, ?)");
-                                        $s_stmt->execute([$episodeId, $server['name'], $server['url']]);
+                                        $drm = isset($server['drm']) && $server['drm'] === true;
+                                        $license_url = $drm ? ($server['license'] ?? null) : null;
+                                        $s_stmt->execute([$episodeId, $server['name'], $server['url'], $drm, $license_url]);
                                     }
                                 }
                             }
@@ -106,7 +92,9 @@ function handle_json_import($file) {
         return "Success: Imported {$imported_count} new items. Skipped {$skipped_count} duplicates.";
 
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         return "Database error during import: " . $e->getMessage();
     }
 }
