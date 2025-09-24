@@ -6,6 +6,11 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../config.php';
 
+$pdo = connect_db();
+if (!$pdo) {
+    die("Database connection failed. Please check your configuration.");
+}
+
 // Fetch initial server list
 $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = ?");
 $stmt->execute(['auto_embed_servers']);
