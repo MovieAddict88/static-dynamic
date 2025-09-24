@@ -45,36 +45,58 @@ function handle_search_tmdb() {
 function handle_browse_regional() {
     $region = isset($_GET['region']) ? trim($_GET['region']) : 'hollywood';
     $year = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
+    $type = isset($_GET['type']) ? trim($_GET['type']) : 'movie'; // Default to movie if not specified
     $apiKey = isset($_GET['apiKey']) ? trim($_GET['apiKey']) : 'ec926176bf467b3f7735e3154238c161';
 
-    $params = [
-        'sort_by' => 'popularity.desc',
-        'primary_release_year' => $year,
+    $regionalConfigs = [
+        'hollywood' => ['with_original_language' => 'en'],
+        'anime' => ['with_genres' => 16, 'with_original_language' => 'ja'],
+        'animation' => ['with_genres' => 16],
+        'kdrama' => ['with_genres' => 18, 'with_original_language' => 'ko'],
+        'cdrama' => ['with_genres' => 18, 'with_original_language' => 'zh'],
+        'jdrama' => ['with_genres' => 18, 'with_original_language' => 'ja'],
+        'pinoy' => ['with_origin_country' => 'PH', 'with_original_language' => 'tl'],
+        'thai' => ['with_origin_country' => 'TH', 'with_original_language' => 'th'],
+        'indian' => ['with_origin_country' => 'IN', 'with_original_language' => 'hi'],
+        'turkish' => ['with_origin_country' => 'TR', 'with_original_language' => 'tr'],
     ];
 
-    // Region-specific parameters
-    switch ($region) {
-        case 'anime':
-            $params['with_genres'] = 16;
-            $params['with_original_language'] = 'ja';
-            break;
-        case 'kdrama':
-            $params['with_genres'] = 18; // Drama
-            $params['with_original_language'] = 'ko';
-            break;
-        case 'hollywood':
-        default:
-            $params['with_original_language'] = 'en';
-            break;
+    $params = ['sort_by' => 'popularity.desc'];
+    if ($year) {
+        $params['primary_release_year'] = $year;
+        $params['first_air_date_year'] = $year;
     }
 
-    $endpoint = "/discover/movie?" . http_build_query($params);
-    $results = fetchTMDB($endpoint, $apiKey);
-
-    if (isset($results['results'])) {
-        echo json_encode($results['results']);
-    } else {
-        echo json_encode(['error' => 'Failed to fetch browse results from TMDB.', 'details' => $results]);
+    if (isset($regionalConfigs[$region])) {
+        $params = array_merge($params, $regionalConfigs[$region]);
     }
+
+    $results = [];
+    $typesToFetch = ($type === 'multi') ? ['movie', 'tv'] : [$type];
+
+    foreach ($typesToFetch as $fetchType) {
+        $endpoint = "/discover/{$fetchType}";
+        $queryParams = $params;
+        // Use correct year parameter for each type
+        if ($fetchType === 'movie') unset($queryParams['first_air_date_year']);
+        if ($fetchType === 'tv') unset($queryParams['primary_release_year']);
+
+        $fullEndpoint = $endpoint . '?' . http_build_query($queryParams);
+        $data = fetchTMDB($fullEndpoint, $apiKey);
+        if (isset($data['results'])) {
+            // Add media_type to each result so the frontend knows what it is
+            foreach ($data['results'] as &$item) {
+                $item['media_type'] = $fetchType;
+            }
+            $results = array_merge($results, $data['results']);
+        }
+    }
+
+    // Sort combined results by popularity
+    usort($results, function($a, $b) {
+        return ($b['popularity'] ?? 0) <=> ($a['popularity'] ?? 0);
+    });
+
+    echo json_encode($results);
 }
 ?>
