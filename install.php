@@ -156,7 +156,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->exec($sql);
 
                 // Insert default settings
-                $pdo->exec("INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES ('auto_embed_servers', '[]') ON DUPLICATE KEY UPDATE `setting_value`=`setting_value`;");
+                $servers_json = '[{"url":"https://vidsrc.to/embed","enabled":true},{"url":"https://vidsrc.xyz/embed","enabled":true},{"url":"https://vidsrc.me/embed","enabled":true},{"url":"https://embed.su/embed","enabled":true},{"url":"https://player.autoembed.cc/embed","enabled":true},{"url":"https://multiembed.mov/directstream.php","enabled":true},{"url":"https://www.embedsoap.com/embed","enabled":true},{"url":"https://moviesapi.club/movie","enabled":true},{"url":"https://vidsrc.win","enabled":true},{"url":"https://dbgo.fun/movie","enabled":true}]';
+                $stmt = $pdo->prepare("INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES ('auto_embed_servers', ?) ON DUPLICATE KEY UPDATE `setting_value`=VALUES(`setting_value`)");
+                $stmt->execute([$servers_json]);
 
             } catch (PDOException $e) {
                 $errors[] = "Table creation failed: " . $e->getMessage();

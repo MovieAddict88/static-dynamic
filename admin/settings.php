@@ -12,8 +12,8 @@ if (!$pdo) {
 }
 
 // Fetch initial server list
-$stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = ?");
-$stmt->execute(['auto_embed_servers']);
+$stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'auto_embed_servers'");
+$stmt->execute();
 $result = $stmt->fetchColumn();
 $servers = $result ? json_decode($result, true) : [];
 
@@ -42,12 +42,12 @@ $servers = $result ? json_decode($result, true) : [];
 
         <div class="card">
             <h2><i class="fas fa-server"></i> Auto-Embed Server Management</h2>
-            <p>Add and manage the base URLs for your video servers. These will be used to automatically generate embed links for new content.</p>
+            <p>Add and manage the base URLs for your video servers. Enable or disable servers that will be used to automatically generate embed links for new content.</p>
 
             <form id="add-server-form" class="form-inline">
                 <div class="form-group">
                     <label for="server-url">New Server URL</label>
-                    <input type="text" id="server-url" placeholder="e.g., https://stream.example.com/embed?v=" required>
+                    <input type="text" id="server-url" placeholder="e.g., https://vidsrc.to/embed" required>
                 </div>
                 <button type="submit" class="btn btn-primary">Add Server</button>
             </form>
@@ -58,8 +58,12 @@ $servers = $result ? json_decode($result, true) : [];
                     <li id="no-servers-message">No servers configured yet.</li>
                 <?php else: ?>
                     <?php foreach ($servers as $server): ?>
-                        <li data-url="<?php echo htmlspecialchars($server); ?>">
-                            <span><?php echo htmlspecialchars($server); ?></span>
+                        <li data-url="<?php echo htmlspecialchars($server['url']); ?>">
+                            <label class="switch">
+                                <input type="checkbox" <?php echo $server['enabled'] ? 'checked' : ''; ?> onchange="toggleServerStatus(this, '<?php echo htmlspecialchars($server['url']); ?>')">
+                                <span class="slider round"></span>
+                            </label>
+                            <span><?php echo htmlspecialchars($server['url']); ?></span>
                             <button class="btn btn-danger btn-small delete-server-btn">Delete</button>
                         </li>
                     <?php endforeach; ?>
@@ -69,102 +73,109 @@ $servers = $result ? json_decode($result, true) : [];
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const addForm = document.getElementById('add-server-form');
+        // --- Add Server ---
+        document.getElementById('add-server-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
             const serverUrlInput = document.getElementById('server-url');
-            const serverList = document.getElementById('server-list');
-            const statusContainer = document.getElementById('status-container');
-            const noServersMessage = document.getElementById('no-servers-message');
+            const url = serverUrlInput.value.trim();
+            if (!url) return;
 
-            // --- Add Server ---
-            addForm.addEventListener('submit', async function(e) {
-                e.preventDefault();
-                const url = serverUrlInput.value.trim();
-                if (!url) return;
+            const formData = new FormData();
+            formData.append('url', url);
+
+            try {
+                const response = await fetch('settings_api.php?action=add_server', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (result.success) {
+                    showStatus('success', result.message);
+                    addServerToList({ url: url, enabled: true });
+                    serverUrlInput.value = '';
+                } else {
+                    showStatus('error', result.message || 'An unknown error occurred.');
+                }
+            } catch (error) {
+                showStatus('error', 'Request failed: ' + error.toString());
+            }
+        });
+
+        // --- Delete Server ---
+        document.getElementById('server-list').addEventListener('click', async function(e) {
+            if (e.target.classList.contains('delete-server-btn')) {
+                const listItem = e.target.closest('li');
+                const url = listItem.dataset.url;
+                if (!confirm(`Are you sure you want to delete the server: ${url}?`)) return;
 
                 const formData = new FormData();
                 formData.append('url', url);
 
                 try {
-                    const response = await fetch('settings_api.php?action=add_server', {
-                        method: 'POST',
-                        body: formData
-                    });
+                    const response = await fetch('settings_api.php?action=delete_server', { method: 'POST', body: formData });
                     const result = await response.json();
-
                     if (result.success) {
                         showStatus('success', result.message);
-                        addServerToList(url);
-                        serverUrlInput.value = '';
+                        listItem.remove();
+                        if (document.getElementById('server-list').children.length === 0) {
+                             document.getElementById('server-list').innerHTML = '<li id="no-servers-message">No servers configured yet.</li>';
+                        }
                     } else {
                         showStatus('error', result.message || 'An unknown error occurred.');
                     }
                 } catch (error) {
                     showStatus('error', 'Request failed: ' + error.toString());
                 }
-            });
-
-            // --- Delete Server ---
-            serverList.addEventListener('click', async function(e) {
-                if (e.target.classList.contains('delete-server-btn')) {
-                    const listItem = e.target.closest('li');
-                    const url = listItem.dataset.url;
-
-                    if (!confirm(`Are you sure you want to delete the server: ${url}?`)) {
-                        return;
-                    }
-
-                    const formData = new FormData();
-                    formData.append('url', url);
-
-                    try {
-                        const response = await fetch('settings_api.php?action=delete_server', {
-                            method: 'POST',
-                            body: formData
-                        });
-                        const result = await response.json();
-
-                        if (result.success) {
-                            showStatus('success', result.message);
-                            listItem.remove();
-                            if (serverList.children.length === 0) {
-                                serverList.innerHTML = '<li id="no-servers-message">No servers configured yet.</li>';
-                            }
-                        } else {
-                            showStatus('error', result.message || 'An unknown error occurred.');
-                        }
-                    } catch (error) {
-                        showStatus('error', 'Request failed: ' + error.toString());
-                    }
-                }
-            });
-
-            function addServerToList(url) {
-                if (noServersMessage) {
-                    noServersMessage.remove();
-                }
-                const listItem = document.createElement('li');
-                listItem.dataset.url = url;
-                listItem.innerHTML = `
-                    <span>${escapeHTML(url)}</span>
-                    <button class="btn btn-danger btn-small delete-server-btn">Delete</button>
-                `;
-                serverList.appendChild(listItem);
-            }
-
-            function showStatus(type, message) {
-                statusContainer.innerHTML = `<div class="status ${type}">${escapeHTML(message)}</div>`;
-                setTimeout(() => {
-                    statusContainer.innerHTML = '';
-                }, 5000);
-            }
-
-            function escapeHTML(str) {
-                const p = document.createElement('p');
-                p.appendChild(document.createTextNode(str));
-                return p.innerHTML;
             }
         });
+
+        // --- Toggle Server Status ---
+        async function toggleServerStatus(checkbox, url) {
+            const isEnabled = checkbox.checked;
+            const formData = new FormData();
+            formData.append('url', url);
+            formData.append('enabled', isEnabled ? '1' : '0');
+
+            try {
+                const response = await fetch('settings_api.php?action=toggle_server', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (result.success) {
+                    showStatus('success', result.message);
+                } else {
+                    showStatus('error', result.message || 'An unknown error occurred.');
+                    checkbox.checked = !isEnabled; // Revert on failure
+                }
+            } catch (error) {
+                showStatus('error', 'Request failed: ' + error.toString());
+                checkbox.checked = !isEnabled; // Revert on failure
+            }
+        }
+
+        function addServerToList(server) {
+            const noServersMessage = document.getElementById('no-servers-message');
+            if (noServersMessage) noServersMessage.remove();
+
+            const listItem = document.createElement('li');
+            listItem.dataset.url = server.url;
+            listItem.innerHTML = `
+                <label class="switch">
+                    <input type="checkbox" ${server.enabled ? 'checked' : ''} onchange="toggleServerStatus(this, '${escapeHTML(server.url)}')">
+                    <span class="slider round"></span>
+                </label>
+                <span>${escapeHTML(server.url)}</span>
+                <button class="btn btn-danger btn-small delete-server-btn">Delete</button>
+            `;
+            document.getElementById('server-list').appendChild(listItem);
+        }
+
+        function showStatus(type, message) {
+            const statusContainer = document.getElementById('status-container');
+            statusContainer.innerHTML = `<div class="status ${type}">${escapeHTML(message)}</div>`;
+            setTimeout(() => { statusContainer.innerHTML = ''; }, 4000);
+        }
+
+        function escapeHTML(str) {
+            const p = document.createElement('p');
+            p.appendChild(document.createTextNode(str));
+            return p.innerHTML;
+        }
     </script>
 </body>
 </html>
