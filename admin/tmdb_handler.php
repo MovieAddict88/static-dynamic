@@ -26,25 +26,80 @@ function fetchTMDB($endpoint, $apiKey, $params = []) {
 
 // Function to generate the final URL based on a base URL and content type
 function generate_final_url($base_url, $type, $tmdb_id, $season = null, $episode = null) {
-    // Trim trailing slash from base url
+    $host = parse_url($base_url, PHP_URL_HOST);
     $base_url = rtrim($base_url, '/');
 
-    // A simple logic to handle common embed patterns.
-    // This can be expanded if more server-specific formats are needed.
-    if ($type === 'movie') {
-        // Common pattern: https://example.com/embed/movie/12345
-        if (strpos($base_url, 'multiembed.mov') !== false) {
-             return "{$base_url}?video_id={$tmdb_id}&tmdb=1";
-        }
-        return "{$base_url}/movie/{$tmdb_id}";
-    } elseif ($type === 'tv') {
-        // Common pattern: https://example.com/embed/tv/12345/1/1
-        if (strpos($base_url, 'multiembed.mov') !== false) {
-             return "{$base_url}?video_id={$tmdb_id}&tmdb=1&s={$season}&e={$episode}";
-        }
-        return "{$base_url}/tv/{$tmdb_id}/{$season}/{$episode}";
+    // Default pattern for many servers
+    $default_movie_path = "/movie/{$tmdb_id}";
+    $default_tv_path = "/tv/{$tmdb_id}/{$season}/{$episode}";
+
+    switch (true) {
+        case strpos($host, 'multiembed.mov') !== false:
+            return $type === 'movie'
+                ? "{$base_url}?video_id={$tmdb_id}&content_type=movie"
+                : "{$base_url}?video_id={$tmdb_id}&tmdb=1&s={$season}&e={$episode}";
+
+        case strpos($host, 'vidsrc.win') !== false:
+            return $type === 'movie'
+                ? "{$base_url}/movie.html?id={$tmdb_id}"
+                : "{$base_url}/tv?id={$tmdb_id}&s={$season}&e={$episode}";
+
+        case strpos($host, 'moviesapi.club') !== false:
+        case strpos($host, 'dbgo.fun') !== false:
+            return $type === 'movie'
+                ? "{$base_url}/{$tmdb_id}"
+                : "{$base_url}/{$tmdb_id}?s={$season}&e={$episode}";
+
+        case strpos($host, 'flixhq.to') !== false:
+        case strpos($host, 'gomovies.sx') !== false:
+            return $type === 'movie'
+                ? "{$base_url}/movie/{$tmdb_id}"
+                : "{$base_url}/tv/{$tmdb_id}/{$season}/{$episode}";
+
+        case strpos($host, 'streamwish.to') !== false:
+        case strpos($host, 'doodstream.com') !== false:
+            return $type === 'movie'
+                ? "{$base_url}/e/{$tmdb_id}"
+                : "{$base_url}/e/{$tmdb_id}_s{$season}e{$episode}";
+
+        case strpos($host, 'vidplus.to') !== false:
+        case strpos($host, 'vidfast.pro') !== false:
+        case strpos($host, 'vidlink.pro') !== false:
+             return $type === 'movie'
+                ? "{$base_url}/movie/{$tmdb_id}?autoplay=true"
+                : "{$base_url}/tv/{$tmdb_id}/{$season}/{$episode}?autoplay=true";
+
+        case strpos($host, 'godriveplayer.com') !== false:
+        case strpos($host, '2embed.cc') !== false:
+             return $type === 'movie'
+                ? "{$base_url}/embed/{$tmdb_id}"
+                : "{$base_url}/embed/{$tmdb_id}?s={$season}&e={$episode}";
+
+        // Default cases for most embed sites
+        case strpos($host, 'vidsrc.net') !== false:
+        case strpos($host, 'vidjoy.pro') !== false:
+        case strpos($host, 'embed.su') !== false:
+        case strpos($host, 'vidsrc.me') !== false:
+        case strpos($host, 'player.autoembed.cc') !== false:
+        case strpos($host, 'vidsrc.to') !== false:
+        case strpos($host, 'vidsrc.xyz') !== false:
+        case strpos($host, 'embedsoap.com') !== false:
+        case strpos($host, 'showbox.media') !== false:
+        case strpos($host, 'primewire.mx') !== false:
+        case strpos($host, 'hdtoday.tv') !== false:
+        case strpos($host, 'vidcloud.to') !== false:
+        case strpos($host, '2embed.stream') !== false:
+        case strpos($host, 'player.videasy.net') !== false:
+            return $type === 'movie'
+                ? "{$base_url}{$default_movie_path}"
+                : "{$base_url}{$default_tv_path}";
+
+        default:
+            // Fallback for any other server not explicitly handled
+            return $type === 'movie'
+                ? "{$base_url}{$default_movie_path}"
+                : "{$base_url}{$default_tv_path}";
     }
-    return $base_url; // Fallback
 }
 
 

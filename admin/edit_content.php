@@ -5,6 +5,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 require_once '../config.php';
+require_once 'tmdb_handler.php'; // Use the centralized function
 
 $contentId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $message = '';
@@ -30,6 +31,7 @@ $enabled_server_urls = array_column($enabled_servers, 'url');
 
 // Helper to parse a URL. It needs all servers (even disabled ones) to correctly parse old, saved URLs.
 function parse_server_url($url, $all_servers) {
+    if (empty($all_servers) || !is_array($all_servers)) return ['base' => 'custom', 'path' => $url];
     $all_server_urls = array_column($all_servers, 'url');
     foreach ($all_server_urls as $server_base) {
         if (strpos($url, $server_base) === 0) {
@@ -37,19 +39,6 @@ function parse_server_url($url, $all_servers) {
         }
     }
     return ['base' => 'custom', 'path' => $url];
-}
-
-// Helper to generate final URLs
-function generate_final_url($base_url, $type, $tmdb_id, $season = null, $episode = null) {
-    $base_url = rtrim($base_url, '/');
-    if ($type === 'movie') {
-        if (strpos($base_url, 'multiembed.mov') !== false) return "{$base_url}?video_id={$tmdb_id}&tmdb=1";
-        return "{$base_url}/movie/{$tmdb_id}";
-    } elseif ($type === 'tv') {
-        if (strpos($base_url, 'multiembed.mov') !== false) return "{$base_url}?video_id={$tmdb_id}&tmdb=1&s={$season}&e={$episode}";
-        return "{$base_url}/tv/{$tmdb_id}/{$season}/{$episode}";
-    }
-    return $base_url;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -155,7 +144,7 @@ if ($content['type'] === 'series') {
 <div class="container">
     <header class="main-header">
         <h1><i class="fas fa-edit"></i> Edit Content</h1>
-        <div class="user-info"><a href="index.php?#data-management">Back to Dashboard</a></div>
+        <div class="user-info"><a href="index.php#data-management">Back to Dashboard</a></div>
     </header>
 
     <?php if ($message): ?><div class="status success" id="status-message"><?php echo $message; ?></div><?php endif; ?>
