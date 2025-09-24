@@ -156,7 +156,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->exec($sql);
 
                 // Insert default settings
-                $servers_json = '[{"url":"https://vidsrc.to/embed","enabled":true},{"url":"https://vidsrc.xyz/embed","enabled":true},{"url":"https://vidsrc.me/embed","enabled":true},{"url":"https://embed.su/embed","enabled":true},{"url":"https://player.autoembed.cc/embed","enabled":true},{"url":"https://multiembed.mov/directstream.php","enabled":true},{"url":"https://www.embedsoap.com/embed","enabled":true},{"url":"https://moviesapi.club/movie","enabled":true},{"url":"https://vidsrc.win","enabled":true},{"url":"https://dbgo.fun/movie","enabled":true}]';
+                $servers = [
+                    ["url" => "https://vidsrc.net/embed", "enabled" => true],
+                    ["url" => "https://vidjoy.pro/embed", "enabled" => true],
+                    ["url" => "https://multiembed.mov/directstream.php", "enabled" => true],
+                    ["url" => "https://embed.su/embed", "enabled" => true],
+                    ["url" => "https://vidsrc.me/embed", "enabled" => true],
+                    ["url" => "https://player.autoembed.cc/embed", "enabled" => true],
+                    ["url" => "https://vidsrc.win", "enabled" => true],
+                    ["url" => "https://vidsrc.to/embed", "enabled" => true],
+                    ["url" => "https://vidsrc.xyz/embed", "enabled" => true],
+                    ["url" => "https://www.embedsoap.com/embed", "enabled" => true],
+                    ["url" => "https://moviesapi.club/movie", "enabled" => true],
+                    ["url" => "https://dbgo.fun/movie", "enabled" => true],
+                    ["url" => "https://flixhq.to/watch", "enabled" => true],
+                    ["url" => "https://gomovies.sx/watch", "enabled" => true],
+                    ["url" => "https://www.showbox.media/embed", "enabled" => true],
+                    ["url" => "https://primewire.mx/embed", "enabled" => true],
+                    ["url" => "https://hdtoday.tv/embed", "enabled" => true],
+                    ["url" => "https://vidcloud.to/embed", "enabled" => true],
+                    ["url" => "https://streamwish.to/e", "enabled" => true],
+                    ["url" => "https://doodstream.com/e", "enabled" => true],
+                    ["url" => "https://player.vidplus.to/embed", "enabled" => true],
+                    ["url" => "https://www.2embed.stream/embed", "enabled" => true],
+                    ["url" => "https://player.videasy.net", "enabled" => true],
+                    ["url" => "https://vidfast.pro", "enabled" => true],
+                    ["url" => "https://godriveplayer.com/embed", "enabled" => true],
+                    ["url" => "https://2embed.cc/embed", "enabled" => true],
+                    ["url" => "https://vidlink.pro", "enabled" => true]
+                ];
+                $servers_json = json_encode($servers);
                 $stmt = $pdo->prepare("INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES ('auto_embed_servers', ?) ON DUPLICATE KEY UPDATE `setting_value`=VALUES(`setting_value`)");
                 $stmt->execute([$servers_json]);
 
