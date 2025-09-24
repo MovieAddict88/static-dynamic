@@ -3157,6 +3157,7 @@
     </footer>
 
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.3.7/shaka-player.compiled.js"></script>
     <script>
@@ -4441,6 +4442,68 @@
         // Play URL with YouTube and Vidsrc support
         async function playUrl(url, servers = []) {
             if (!url || !playerInstance) return;
+
+            // HLS.js integration for .m3u8 streams
+            if (url.includes('.m3u8')) {
+                // Destroy previous HLS instance if it exists
+                if (window.hls) {
+                    window.hls.destroy();
+                }
+
+                if (Hls.isSupported()) {
+                    console.log("HLS.js is supported, creating new instance for:", url);
+                    const hls = new Hls({
+                        debug: true, // Enable verbose logging for diagnostics
+                        enableWorker: true,
+                        lowLatencyMode: true
+                    });
+
+                    hls.loadSource(url);
+                    hls.attachMedia(elements.player);
+
+                    hls.on(Hls.Events.ERROR, function (event, data) {
+                        console.error('HLS.js Error:', JSON.stringify(data, null, 2));
+                        if (data.fatal) {
+                            switch (data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    let errorMsg = '<b>Video Load Error (Network/CORS)</b><br>The player could not load the video.';
+                                    if (data.details === 'manifestLoadError' && data.response) {
+                                        errorMsg += `<br>This is likely a CORS issue. The server needs to allow requests from your website's domain.`;
+                                    } else {
+                                        errorMsg += '<br>Please check your network connection and the video link.';
+                                    }
+                                    elements.playerMessageArea.innerHTML = errorMsg;
+                                    elements.playerMessageArea.style.display = 'block';
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    console.log('Attempting to recover from media error...');
+                                    hls.recoverMediaError();
+                                    break;
+                                default:
+                                    elements.playerMessageArea.textContent = 'An unrecoverable error occurred during playback.';
+                                    elements.playerMessageArea.style.display = 'block';
+                                    hls.destroy();
+                                    break;
+                            }
+                        }
+                    });
+
+                    window.hls = hls;
+                    elements.player.play().catch(e => console.warn("Autoplay was prevented:", e));
+
+                } else if (elements.player.canPlayType('application/vnd.apple.mpegurl')) {
+                    console.log("Native HLS is supported, loading .m3u8 stream.");
+                    elements.player.src = url;
+                    elements.player.addEventListener('loadedmetadata', () => {
+                        elements.player.play().catch(e => console.warn("Autoplay was prevented:", e));
+                    });
+                } else {
+                    console.error("HLS is not supported on this browser.");
+                    elements.playerMessageArea.textContent = 'This browser does not support HLS playback.';
+                    elements.playerMessageArea.style.display = 'block';
+                }
+                return; // Exit after handling HLS
+            }
 
             const playerContainer = document.querySelector('.player-container');
             let iframe = playerContainer.querySelector('iframe.external-content-iframe');
