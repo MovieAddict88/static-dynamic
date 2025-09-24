@@ -9,7 +9,7 @@ function fetchTMDB($endpoint, $apiKey, $params = []) {
     // Add required parameters
     $params['api_key'] = $apiKey;
     if (!isset($params['append_to_response'])) {
-        $params['append_to_response'] = 'credits,videos,release_dates';
+        $params['append_to_response'] = 'credits,videos,release_dates,content_ratings';
     }
 
     $queryString = http_build_query($params);
@@ -18,13 +18,12 @@ function fetchTMDB($endpoint, $apiKey, $params = []) {
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_USERAGENT, 'CineCrazePHPApp/1.0'); // Good practice to set a user agent
+    curl_setopt($ch, CURLOPT_USERAGENT, 'CineCrazePHPApp/1.0');
     $output = curl_exec($ch);
     $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
     if ($httpcode != 200) {
-        // Log error or handle it appropriately
         return ['error' => 'TMDB API request failed', 'status_code' => $httpcode, 'response' => json_decode($output, true)];
     }
 
@@ -33,8 +32,7 @@ function fetchTMDB($endpoint, $apiKey, $params = []) {
 
 // Function to add a movie from TMDB to the database
 function addMovieFromTmdb($tmdbId) {
-    // NOTE: This is a placeholder for the actual API key.
-    // In a real application, this should be stored securely.
+    // In a real application, this should be managed better.
     $apiKey = 'ec926176bf467b3f7735e3154238c161';
     $movieData = fetchTMDB("/movie/{$tmdbId}", $apiKey);
 
@@ -58,6 +56,13 @@ function addMovieFromTmdb($tmdbId) {
             return "Info: Movie with TMDB ID {$tmdbId} already exists in the database.";
         }
 
+        // Fetch auto-embed servers
+        $server_stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'auto_embed_servers'");
+        $server_stmt->execute();
+        $servers_json = $server_stmt->fetchColumn();
+        $servers = $servers_json ? json_decode($servers_json, true) : [];
+        $server_count = 0;
+
         // Insert into content table
         $stmt = $pdo->prepare(
             "INSERT INTO content (tmdb_id, type, title, description, poster_url, thumbnail_url, release_year, rating, duration, parental_rating)
@@ -79,37 +84,52 @@ function addMovieFromTmdb($tmdbId) {
         // Insert genres
         if (!empty($movieData['genres'])) {
             foreach ($movieData['genres'] as $genreData) {
-                // Find or create genre
                 $stmt = $pdo->prepare("SELECT id FROM genres WHERE name = ?");
                 $stmt->execute([$genreData['name']]);
-                $genre = $stmt->fetch();
-                if ($genre) {
-                    $genreId = $genre['id'];
-                } else {
+                if (!($genre = $stmt->fetch())) {
                     $stmt = $pdo->prepare("INSERT INTO genres (name) VALUES (?)");
                     $stmt->execute([$genreData['name']]);
                     $genreId = $pdo->lastInsertId();
+                } else {
+                    $genreId = $genre['id'];
                 }
-                // Link content to genre
                 $stmt = $pdo->prepare("INSERT INTO content_genres (content_id, genre_id) VALUES (?, ?)");
                 $stmt->execute([$contentId, $genreId]);
             }
         }
 
+        // Insert auto-generated server links
+        if (!empty($servers)) {
+            $server_insert_stmt = $pdo->prepare("INSERT INTO servers (content_id, name, url, quality) VALUES (?, ?, ?, ?)");
+            foreach ($servers as $server_url) {
+                $host = parse_url($server_url, PHP_URL_HOST) ?? 'Auto Server';
+                $final_url = $server_url . $tmdbId;
+                $server_insert_stmt->execute([$contentId, $host, $final_url, 'HD']);
+                $server_count++;
+            }
+        }
+
         $pdo->commit();
-        return "Success: Movie '{$movieData['title']}' was added to the database.";
+        $message = "Success: Movie '{$movieData['title']}' was added.";
+        if ($server_count > 0) {
+            $message .= " {$server_count} embed link(s) auto-generated.";
+        } else {
+            $message .= " Warning: No embed links generated as no servers are configured in Settings.";
+        }
+        return $message;
 
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if($pdo->inTransaction()) $pdo->rollBack();
         return "Database error: " . $e->getMessage();
     }
 }
 
-// Helper function to get US certification for a movie
+// Helper function to get US certification
 function getMovieCertification($movieData) {
     if (isset($movieData['release_dates']['results'])) {
         foreach ($movieData['release_dates']['results'] as $result) {
             if ($result['iso_3166_1'] == 'US') {
+                // Type 3 is theatrical release
                 foreach($result['release_dates'] as $release) {
                     if($release['type'] == 3 && !empty($release['certification'])) return $release['certification'];
                 }
@@ -119,11 +139,10 @@ function getMovieCertification($movieData) {
     return 'NR';
 }
 
-// Helper function to get US certification for a series
 function getSeriesCertification($seriesData) {
     if (isset($seriesData['content_ratings']['results'])) {
         foreach ($seriesData['content_ratings']['results'] as $result) {
-            if ($result['iso_3166_1'] == 'US') {
+            if ($result['iso_3166_1'] == 'US' && !empty($result['rating'])) {
                 return $result['rating'];
             }
         }
@@ -155,6 +174,13 @@ function addSeriesFromTmdb($tmdbId, $seasonsInput = '') {
             return "Info: Series with TMDB ID {$tmdbId} already exists.";
         }
 
+        // Fetch auto-embed servers
+        $server_stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'auto_embed_servers'");
+        $server_stmt->execute();
+        $servers_json = $server_stmt->fetchColumn();
+        $servers = $servers_json ? json_decode($servers_json, true) : [];
+        $server_count = 0;
+
         // Insert into content table
         $stmt = $pdo->prepare(
             "INSERT INTO content (tmdb_id, type, title, description, poster_url, thumbnail_url, release_year, rating, parental_rating)
@@ -177,12 +203,12 @@ function addSeriesFromTmdb($tmdbId, $seasonsInput = '') {
             foreach ($seriesData['genres'] as $genreData) {
                 $stmt = $pdo->prepare("SELECT id FROM genres WHERE name = ?");
                 $stmt->execute([$genreData['name']]);
-                $genre = $stmt->fetch();
-                $genreId = $genre ? $genre['id'] : null;
-                if (!$genreId) {
+                if(!($genre = $stmt->fetch())) {
                     $stmt = $pdo->prepare("INSERT INTO genres (name) VALUES (?)");
                     $stmt->execute([$genreData['name']]);
                     $genreId = $pdo->lastInsertId();
+                } else {
+                    $genreId = $genre['id'];
                 }
                 $stmt = $pdo->prepare("INSERT INTO content_genres (content_id, genre_id) VALUES (?, ?)");
                 $stmt->execute([$contentId, $genreId]);
@@ -195,10 +221,15 @@ function addSeriesFromTmdb($tmdbId, $seasonsInput = '') {
             $seasonsToFetch = array_map('intval', explode(',', $seasonsInput));
         } else {
             foreach ($seriesData['seasons'] as $season) {
-                if ($season['season_number'] > 0) { // Typically skip "Specials" (season 0)
+                if ($season['season_number'] > 0) { // Skip "Specials" (season 0)
                     $seasonsToFetch[] = $season['season_number'];
                 }
             }
+        }
+
+        // Prepare server insert statement once
+        if (!empty($servers)) {
+            $server_insert_stmt = $pdo->prepare("INSERT INTO servers (episode_id, name, url, quality) VALUES (?, ?, ?, ?)");
         }
 
         // Process each season and its episodes
@@ -206,17 +237,10 @@ function addSeriesFromTmdb($tmdbId, $seasonsInput = '') {
             $seasonData = fetchTMDB("/tv/{$tmdbId}/season/{$seasonNumber}", $apiKey);
             if (!$seasonData || !empty($seasonData['error'])) continue;
 
-            // Insert season
             $stmt = $pdo->prepare("INSERT INTO seasons (content_id, season_number, title, poster_url) VALUES (?, ?, ?, ?)");
-            $stmt->execute([
-                $contentId,
-                $seasonNumber,
-                $seasonData['name'],
-                isset($seasonData['poster_path']) ? 'https://image.tmdb.org/t/p/w500' . $seasonData['poster_path'] : null
-            ]);
+            $stmt->execute([$contentId, $seasonNumber, $seasonData['name'], isset($seasonData['poster_path']) ? 'https://image.tmdb.org/t/p/w500' . $seasonData['poster_path'] : null]);
             $seasonId = $pdo->lastInsertId();
 
-            // Insert episodes
             if (!empty($seasonData['episodes'])) {
                 foreach ($seasonData['episodes'] as $episodeData) {
                     $stmt = $pdo->prepare(
@@ -224,22 +248,36 @@ function addSeriesFromTmdb($tmdbId, $seasonsInput = '') {
                          VALUES (?, ?, ?, ?, ?, ?)"
                     );
                     $stmt->execute([
-                        $seasonId,
-                        $episodeData['episode_number'],
-                        $episodeData['name'],
-                        $episodeData['overview'],
+                        $seasonId, $episodeData['episode_number'], $episodeData['name'], $episodeData['overview'],
                         isset($episodeData['still_path']) ? 'https://image.tmdb.org/t/p/w780' . $episodeData['still_path'] : null,
                         $episodeData['runtime'] ? gmdate("H:i:s", $episodeData['runtime'] * 60) : null
                     ]);
+                    $episodeId = $pdo->lastInsertId();
+
+                    // Insert auto-generated server links for the episode
+                    if (!empty($servers)) {
+                        foreach ($servers as $server_url) {
+                            $host = parse_url($server_url, PHP_URL_HOST) ?? 'Auto Server';
+                            $final_url = $server_url . $tmdbId . '-s' . $seasonNumber . '-e' . $episodeData['episode_number'];
+                            $server_insert_stmt->execute([$episodeId, $host, $final_url, 'HD']);
+                            $server_count++;
+                        }
+                    }
                 }
             }
         }
 
         $pdo->commit();
-        return "Success: Series '{$seriesData['name']}' and its seasons/episodes were added.";
+        $message = "Success: Series '{$seriesData['name']}' and its seasons/episodes were added.";
+        if ($server_count > 0) {
+            $message .= " {$server_count} embed link(s) auto-generated.";
+        } else {
+            $message .= " Warning: No embed links generated as no servers are configured in Settings.";
+        }
+        return $message;
 
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if($pdo->inTransaction()) $pdo->rollBack();
         return "Database error: " . $e->getMessage();
     }
 }

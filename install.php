@@ -145,9 +145,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                   CONSTRAINT `servers_ibfk_1` FOREIGN KEY (`content_id`) REFERENCES `content` (`id`) ON DELETE CASCADE,
                   CONSTRAINT `servers_ibfk_2` FOREIGN KEY (`episode_id`) REFERENCES `episodes` (`id`) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+                CREATE TABLE IF NOT EXISTS `settings` (
+                  `setting_key` varchar(100) NOT NULL,
+                  `setting_value` text,
+                  PRIMARY KEY (`setting_key`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ";
 
                 $pdo->exec($sql);
+
+                // Insert default settings
+                $pdo->exec("INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES ('auto_embed_servers', '[]') ON DUPLICATE KEY UPDATE `setting_value`=`setting_value`;");
 
             } catch (PDOException $e) {
                 $errors[] = "Table creation failed: " . $e->getMessage();
