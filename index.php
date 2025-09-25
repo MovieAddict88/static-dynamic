@@ -3585,9 +3585,12 @@
 
             setupParentalControls(); // Setup parental controls first
             createEpisodeNavigationButtons(); // Create buttons before they might be needed
+
+            // Fetch initial data from API
             fetchData().then(() => {
                 renderCarousel();
-                renderContentFilters();
+                // We no longer need to render content filters from a static object
+                // renderContentFilters();
                 renderContent();
                 setupEventListeners();
                 setupMobileBackButton(); // Setup mobile back button support
@@ -3675,95 +3678,51 @@
             return mergeCineDataSegments(segments);
         }
         
-        // Enhanced data fetching with IndexedDB caching
-        async function fetchData() {
-            let db;
+        // --- NEW ---
+        // Enhanced data fetching from the new PHP API
+        async function fetchData(page = 1, type = 'all', genre = 'all', year = 'all', sort = 'newest') {
+            isFetching = true;
+            elements.loadingSpinner.style.display = 'block';
+
             try {
-                db = await dbUtil.open();
-                const cachedData = await dbUtil.get(db, PLAYLIST_KEY);
+                const apiUrl = `./api/index.php?action=get_content&page=${page}&type=${type}&genre=${genre}&year=${year}&sort=${sort}`;
+                const response = await fetch(apiUrl);
+                const result = await response.json();
 
-                if (cachedData) {
-                    cineData = cachedData;
-                    console.log("✅ Loaded data from IndexedDB cache");
-                    return; // Exit early if we have cached data
-                }
+                if (result.status === 'success') {
+                    // This is the key change: we now populate our content array from the API
+                    // instead of a single large JSON file.
+                    cachedContent = result.data.map(item => ({
+                        ...item,
+                        // The API returns the type directly, so we can use it.
+                        // We also normalize some fields to match the old structure if needed.
+                        Title: item.title,
+                        Description: item.description,
+                        Poster: item.poster,
+                        Thumbnail: item.thumbnail,
+                        Year: item.year,
+                        Rating: item.rating,
+                        Duration: item.duration,
+                        Servers: item.servers || []
+                    }));
 
-                console.log("ℹ️ No cache found in IndexedDB. Fetching from network...");
-                elements.progressBarContainer.style.display = 'block';
-                elements.loadingSpinner.style.display = 'none';
-                
-                const primaryUrl = "https://github.com/MovieAddict88/Movie-Source/raw/main/playlist.json";
-                const fallbackUrls = [
-                    "https://raw.githubusercontent.com/MovieAddict88/Movie-Source/main/playlist.json",
-                    "https://cdn.jsdelivr.net/gh/MovieAddict88/Movie-Source@main/playlist.json",
-                    "./playlist.json",
-                    "./data/playlist.json"
-                ];
-                
-                const allCandidateUrls = [primaryUrl, ...fallbackUrls];
-                for (const candidate of allCandidateUrls) {
-                    try {
-                        console.log(`🔎 Trying segmented playlists from: ${getBasePathFromUrl(candidate)}`);
-                        const segmented = await tryFetchSegmented(candidate);
-                        if (segmented && segmented.Categories && segmented.Categories.length > 0) {
-                            cineData = segmented;
-                            await dbUtil.set(db, PLAYLIST_KEY, cineData);
-                            console.log(`✅ Loaded and cached segmented data from base: ${getBasePathFromUrl(candidate)}`);
-                            return;
-                        }
-                    } catch (err) {
-                        console.warn(`⚠️ Segmented fetch failed for ${candidate}`, err);
-                    }
-                    try {
-                        console.log(`🔄 Trying monolithic playlist: ${candidate}`);
-                        elements.progressBarText.textContent = `Trying monolithic playlist...`;
-                        const response = await fetch(withCacheBuster(candidate));
-                        if (response.ok) {
-                            cineData = await response.json();
-                            await dbUtil.set(db, PLAYLIST_KEY, cineData);
-                            console.log(`✅ Loaded and cached data from: ${candidate}`);
-                            return;
-                        }
-                    } catch (err) {
-                        console.warn(`⚠️ Monolithic fetch failed for ${candidate}`, err);
-                    }
+                    totalPages = result.total_pages;
+                    currentPage = result.page;
+
+                    // The rest of the app's rendering logic can now proceed.
+                    // We no longer need the large `cineData` object.
+
+                } else {
+                    throw new Error(result.message || 'Failed to fetch data from API.');
                 }
-                
-                throw new Error("All data sources failed");
-                
             } catch (err) {
-                console.error("❌ All data sources failed:", err);
-                
+                console.error("❌ API data fetch failed:", err);
                 const errorMessage = document.createElement('div');
-                errorMessage.style.cssText = `
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: var(--youtube-gray);
-                    padding: 20px;
-                    border-radius: 8px;
-                    text-align: center;
-                    z-index: 10000;
-                    max-width: 400px;
-                `;
-                errorMessage.innerHTML = `
-                    <h3>⚠️ Data Loading Failed</h3>
-                    <p>Unable to load content data. Please check your internet connection and try again.</p>
-                    <button onclick="this.parentElement.remove(); window.location.reload();" style="
-                        background: var(--primary);
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        margin-top: 10px;
-                    ">Retry</button>
-                `;
-                document.body.appendChild(errorMessage);
+                errorMessage.innerHTML = `<h3>⚠️ Data Loading Failed</h3><p>Could not connect to the API. Please ensure the backend is running correctly.</p>`;
+                elements.contentGrid.innerHTML = '';
+                elements.contentGrid.appendChild(errorMessage);
             } finally {
-                if (db) db.close();
-                elements.progressBarContainer.style.display = 'none';
+                isFetching = false;
                 elements.loadingSpinner.style.display = 'none';
             }
         }
@@ -3782,106 +3741,48 @@
         
         // Render carousel
         function renderCarousel() {
-            if (!cineData || !cineData.Categories || cineData.Categories.length < 3) {
-                console.warn("Carousel data is not as expected. Skipping render.");
+            if (!cachedContent || cachedContent.length === 0) {
+                console.warn("Carousel data is not available. Skipping render.");
                 return;
             }
 
-            const featuredContent = [];
-            const moviesCategory = cineData.Categories.find(cat => cat.MainCategory.toLowerCase().includes('movie'));
-            const seriesCategory = cineData.Categories.find(cat => cat.MainCategory.toLowerCase().includes('series'));
-            const liveCategory = cineData.Categories.find(cat => cat.MainCategory.toLowerCase().includes('live'));
-
-            // Add randomly selected movies
-            if (moviesCategory && moviesCategory.Entries) {
-                getRandomItems(moviesCategory.Entries, 3).forEach(movie => {
-                    featuredContent.push({
-                        type: 'movie',
-                        title: movie.Title,
-                        description: movie.Description,
-                        image: movie.Poster,
-                        // Store original item for click handling
-                        originalItem: movie 
-                    });
-                });
-            }
-
-            // Add randomly selected TV series
-            if (seriesCategory && seriesCategory.Entries) {
-                getRandomItems(seriesCategory.Entries, 1).forEach(series => {
-                    featuredContent.push({
-                        type: 'series',
-                        title: series.Title,
-                        description: series.Description || `Popular ${series.SubCategory} series`,
-                        image: series.Poster,
-                        originalItem: series 
-                    });
-                });
-            }
-
-            // Add randomly selected live TV
-            if (liveCategory && liveCategory.Entries) {
-                getRandomItems(liveCategory.Entries, 1).forEach(live => {
-                    featuredContent.push({
-                        type: 'live',
-                        title: live.Title,
-                        description: live.Description,
-                        image: live.Poster,
-                        originalItem: live 
-                    });
-                });
-            }
-
-            // Shuffle the order of the collected featured content
-            shuffleArray(featuredContent);
+            const featuredContent = getRandomItems(cachedContent, 5);
 
             // Render carousel items
             elements.carouselInner.innerHTML = '';
             elements.carouselIndicators.innerHTML = '';
 
             featuredContent.forEach((item, index) => {
-                // Carousel item
                 const carouselItem = document.createElement('div');
                 carouselItem.className = 'carousel-item';
-                // Get year from the original item if available
-                const year = item.originalItem && item.originalItem.Year ? item.originalItem.Year : '';
-                const ratingHtml = item.originalItem ? generateStarRating(item.originalItem.Rating) : '';
+                const ratingHtml = generateStarRating(item.rating);
 
                 carouselItem.innerHTML = `
-                    <img src="${item.image}" alt="${item.title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
+                    <img src="${item.poster}" alt="${item.title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
                     <div class="carousel-content">
                         <h2>${item.title}</h2>
                         <div class="carousel-meta">
                             ${ratingHtml}
-                            ${year ? `<span class="carousel-year">${year}</span>` : ''}
+                            ${item.year ? `<span class="carousel-year">${item.year}</span>` : ''}
                         </div>
                         <p>${item.description}</p>
                     </div>
                 `;
                 elements.carouselInner.appendChild(carouselItem);
 
-                // Indicator
                 const indicator = document.createElement('div');
                 indicator.className = 'indicator';
                 indicator.dataset.index = index;
                 if (index === 0) indicator.classList.add('active');
                 elements.carouselIndicators.appendChild(indicator);
 
-                // Add click event to indicator
                 indicator.addEventListener('click', () => {
                     currentCarouselIndex = index;
                     updateCarousel();
                 });
 
-                // Make carousel item clickable
                 carouselItem.addEventListener('click', () => {
-                    if (item.originalItem) {
-                        // The 'type' is already correctly set in featuredContent items
-                        openViewer({ ...item.originalItem, type: item.type });
-                    } else {
-                        // Fallback or error if originalItem is somehow missing
-                        console.error("Carousel item is missing originalItem data:", item);
-                    }
+                    openViewer(item);
                 });
             });
         }
@@ -3939,90 +3840,19 @@
             });
         }
         
-        // Render content based on filters
+        // Render content based on filters by calling the API
         async function renderContent(category = 'all') {
-            if (!cineData || !cineData.Categories) return;
-
-            const filtersSection = document.querySelector('.filters-section');
-
-            // Reset pagination
-            currentPage = 1;
-            currentContent = [];
-
-            if (category === 'watch-later') {
-                filtersSection.style.display = 'none'; // Hide filters for Watch Later
-                const db = await watchLaterDbUtil.open();
-                const watchLaterItems = await watchLaterDbUtil.getAll(db);
-                db.close();
-                currentContent = watchLaterItems.map(item => ({ ...item, type: item.type || 'movie' }));
-
-                totalPages = Math.ceil(currentContent.length / ITEMS_PER_PAGE);
-                cachedContent = [...currentContent];
-                currentView = 'watch-later'; // Set the view
-                renderCurrentView();
-                renderPaginationControls();
-                setupLazyLoading();
-                return;
-            } else {
-                const icon = elements.viewToggleBtn.querySelector('i');
-                if (icon.classList.contains('fa-list')) {
-                    currentView = 'list';
-                } else {
-                    currentView = 'grid';
-                }
-                filtersSection.style.display = 'block'; // Show filters for other categories
-            }
-
-            // Get selected category
             const genre = elements.genreFilter.value.toLowerCase();
-            const country = elements.countryFilter.value.toLowerCase();
             const year = elements.yearFilter.value;
             const sortBy = elements.sortFilter.value;
 
-            // Filter content
-            cineData.Categories.forEach(cat => {
-                if (category === 'all' || cat.MainCategory.toLowerCase().includes(category)) {
-                    cat.Entries.forEach(entry => {
-                        // Check genre and country filters
-                        const genreMatch = genre === 'all' ||
-                            (entry.SubCategory && entry.SubCategory.toLowerCase().includes(genre));
-                        const countryMatch = country === 'all' ||
-                            (entry.Country && entry.Country.toLowerCase().includes(country));
-                        const yearMatch = year === 'all' || (entry.Year && entry.Year.toString() === year);
+            // We are now fetching from the API directly with filters.
+            // The `fetchData` function handles the API call.
+            await fetchData(1, category, genre, year, sortBy);
 
-                        if (genreMatch && countryMatch && yearMatch && isContentAllowed(entry)) {
-                            currentContent.push({
-                                ...entry,
-                                type: cat.MainCategory.toLowerCase().includes('movie') ? 'movie' :
-                                    cat.MainCategory.toLowerCase().includes('series') ? 'series' : 'live'
-                            });
-                        }
-                    });
-                }
-            });
-
-            // Shuffle content on initial load
-            if (isInitialLoad) {
-                currentContent = shuffleArray(currentContent);
-                isInitialLoad = false;
-            }
-            // Apply sorting if not initial load
-            else {
-                currentContent = sortContent(currentContent, sortBy);
-            }
-
-            // Calculate total pages
-            totalPages = Math.ceil(currentContent.length / ITEMS_PER_PAGE);
-
-            // Cache filtered content
-            cachedContent = [...currentContent];
-
-            // Render content
+            // After data is fetched, render the view and pagination
             renderCurrentView();
             renderPaginationControls();
-
-            // Re-initialize lazy loading for the new content
-            setupLazyLoading();
         }
 
         // Render the current view (grid or list)
@@ -4256,18 +4086,33 @@
         }
         
         // Open viewer for content
-        function openViewer(content) {
-            // Parental Control Check
-            if (!isContentAllowed(content)) {
-                elements.pinEntryTitle.textContent = "Enter PIN to Watch";
-                showModal(elements.pinEntryModal);
-                pinEntryCallback = () => {
-                    // Temporarily bypass the check for this one time
-                    openViewerInternal(content);
-                };
-                return; // Stop execution until PIN is entered
+        async function openViewer(contentSummary) {
+            try {
+                const response = await fetch(`./api/index.php?action=get_details&id=${contentSummary.id}`);
+                const result = await response.json();
+
+                if (result.status !== 'success') {
+                    throw new Error(result.message || 'Could not fetch content details.');
+                }
+
+                const content = result.data;
+
+                // Parental Control Check
+                if (!isContentAllowed(content)) {
+                    elements.pinEntryTitle.textContent = "Enter PIN to Watch";
+                    showModal(elements.pinEntryModal);
+                    pinEntryCallback = () => {
+                        // Temporarily bypass the check for this one time
+                        openViewerInternal(content);
+                    };
+                    return; // Stop execution until PIN is entered
+                }
+                openViewerInternal(content);
+
+            } catch (error) {
+                console.error("Error fetching content details:", error);
+                showStatus('error', 'Could not load content details.');
             }
-            openViewerInternal(content);
         }
 
         function openViewerInternal(content) {
@@ -7369,84 +7214,46 @@ async function switchToServer(server, allServers) {
 }
 
 
-        // Handle search
-        function handleSearch() {
+        // Handle search by calling the API
+        async function handleSearch() {
             const query = elements.searchInput.value.toLowerCase();
             elements.searchResults.innerHTML = '';
-
-            // Collapse listbox by default until we decide to show something
-            elements.searchInput.setAttribute('aria-expanded', 'false');
-
-            // Require minimal input length
             if (query.length < 2) {
                 elements.searchResults.style.display = 'none';
                 return;
             }
 
-            // Determine if data is available for searching
-            const dataLoaded = (cineData && cineData.Categories && cineData.Categories.length > 0) ||
-                               (Array.isArray(cachedContent) && cachedContent.length > 0);
+            try {
+                const response = await fetch(`./api/index.php?action=search&q=${query}`);
+                const result = await response.json();
 
-            if (!dataLoaded) {
-                const message = document.createElement('div');
-                message.className = 'search-message';
-                message.setAttribute('role', 'status');
-                message.textContent = 'Search unavailable. Content is still loading.';
-                elements.searchResults.appendChild(message);
-                elements.searchResults.style.display = 'block';
-                elements.searchInput.setAttribute('aria-expanded', 'true');
-                return;
-            }
-
-            const results = [];
-
-            // Search through cached content
-            cachedContent.forEach(item => {
-                if (item.Title.toLowerCase().includes(query)) {
-                    results.push({
-                        title: item.Title,
-                        type: item.type === 'movie' ? 'Movie' :
-                              item.type === 'series' ? 'TV Series' : 'Live TV',
-                        thumbnail: item.Thumbnail || item.Poster,
-                        year: item.Year || ''
+                if (result.status === 'success' && result.data.length > 0) {
+                    result.data.forEach(item => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = 'search-result-item';
+                        resultItem.innerHTML = `
+                            <img src="${item.poster}" alt="${item.title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
+                            <div class="search-result-info">
+                                <h4>${item.title}</h4>
+                                <p>${item.type} • ${item.year || ''}</p>
+                            </div>
+                        `;
+                        resultItem.addEventListener('click', () => {
+                            openViewer(item); // openViewer now takes an ID
+                            elements.searchResults.style.display = 'none';
+                        });
+                        elements.searchResults.appendChild(resultItem);
                     });
+                    elements.searchResults.style.display = 'block';
+                } else {
+                    const message = document.createElement('div');
+                    message.className = 'search-message';
+                    message.textContent = `No results for "${query}"`;
+                    elements.searchResults.appendChild(message);
+                    elements.searchResults.style.display = 'block';
                 }
-            });
-
-            if (results.length > 0) {
-                results.slice(0, 5).forEach(result => {
-                    const resultItem = document.createElement('div');
-                    resultItem.className = 'search-result-item';
-                    resultItem.setAttribute('role', 'option');
-                    resultItem.setAttribute('aria-selected', 'false');
-                    resultItem.innerHTML = `
-                        <img src="${result.thumbnail}" alt="${result.title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
-                        <div class="search-result-info">
-                            <h4>${result.title}</h4>
-                            <p>${result.type} • ${result.year || ''}</p>
-                        </div>
-                    `;
-                    resultItem.addEventListener('click', () => {
-                        // Find the content and open viewer
-                        const found = cachedContent.find(item => item.Title === result.title);
-                        if (found) {
-                            openViewer(found);
-                        }
-                        elements.searchResults.style.display = 'none';
-                        elements.searchInput.setAttribute('aria-expanded', 'false');
-                    });
-                    elements.searchResults.appendChild(resultItem);
-                });
-                elements.searchResults.style.display = 'block';
-                elements.searchInput.setAttribute('aria-expanded', 'true');
-            } else {
-                const message = document.createElement('div');
-                message.className = 'search-message';
-                message.setAttribute('role', 'status');
-                message.textContent = `No results for "${elements.searchInput.value}"`;
-                elements.searchResults.appendChild(message);
-                elements.searchResults.style.display = 'block';
-                elements.searchInput.setAttribute('aria-expanded', 'true');
+            } catch (error) {
+                console.error("Search error:", error);
             }
         }
 
