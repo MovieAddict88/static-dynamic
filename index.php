@@ -4441,36 +4441,71 @@
 
         // Play URL with YouTube and Vidsrc support
         async function playUrl(url, servers = []) {
-            if (!url || !playerInstance) return;
+            if (!url) return;
+
+            // Destroy previous instances to ensure a clean state
+            if (playerInstance) {
+                playerInstance.destroy();
+                playerInstance = null;
+            }
+            if (window.hls) {
+                window.hls.destroy();
+                window.hls = null;
+            }
+
+            const videoElement = document.getElementById('player');
 
             // HLS.js integration for .m3u8 streams
             if (url.includes('.m3u8')) {
-                // Destroy previous HLS instance if it exists
-                if (window.hls) {
-                    window.hls.destroy();
-                }
+                const proxyUrl = `proxy.php?url=${encodeURIComponent(url)}`;
 
                 if (Hls.isSupported()) {
-                    console.log("HLS.js is supported, creating new instance for:", url);
+                    console.log("HLS.js is supported, creating new instance for:", proxyUrl);
                     const hls = new Hls({
-                        debug: true, // Enable verbose logging for diagnostics
-                        enableWorker: true,
-                        lowLatencyMode: true
+                        debug: false, // Set to true for more verbose logging
                     });
 
-                    hls.loadSource(url);
-                    hls.attachMedia(elements.player);
+                    hls.loadSource(proxyUrl);
+                    hls.attachMedia(videoElement);
+
+                    let timeout;
+                    const manifestLoadingTimeout = 15000; // 15 seconds
+
+                    // Set a timeout for the manifest loading
+                    timeout = setTimeout(() => {
+                        console.error("HLS manifest loading timed out.");
+                        elements.playerMessageArea.innerHTML = '<b>Video Timed Out</b><br>The video could not be loaded in a reasonable amount of time. Please check the source or try again later.';
+                        elements.playerMessageArea.style.display = 'block';
+                        hls.destroy();
+                    }, manifestLoadingTimeout);
+
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        console.log("HLS manifest parsed, initializing Plyr.");
+                        clearTimeout(timeout); // Clear the timeout as loading was successful
+                        playerInstance = new Plyr(videoElement, {
+                            captions: { active: true, update: true, language: 'en' },
+                        });
+                        window.player = playerInstance;
+                        videoElement.play().catch(e => console.warn("Autoplay was prevented:", e));
+                    });
 
                     hls.on(Hls.Events.ERROR, function (event, data) {
                         console.error('HLS.js Error:', JSON.stringify(data, null, 2));
+                        clearTimeout(timeout); // Clear the timeout on error as well
                         if (data.fatal) {
                             switch (data.type) {
                                 case Hls.ErrorTypes.NETWORK_ERROR:
-                                    let errorMsg = '<b>Video Load Error (Network/CORS)</b><br>The player could not load the video.';
-                                    if (data.details === 'manifestLoadError' && data.response) {
-                                        errorMsg += `<br>This is likely a CORS issue. The server needs to allow requests from your website's domain.`;
-                                    } else {
-                                        errorMsg += '<br>Please check your network connection and the video link.';
+                                    let errorMsg = '<b>Video Load Error</b><br>A network error occurred.';
+                                    // Check if the response from the proxy contains a JSON error
+                                    if (data.response && data.response.data) {
+                                        try {
+                                            const errorJson = JSON.parse(new TextDecoder().decode(data.response.data));
+                                            if (errorJson.error) {
+                                                errorMsg += `<br>Details: ${errorJson.error} - ${errorJson.details || ''}`;
+                                            }
+                                        } catch (e) {
+                                            // Not a JSON error, stick with the generic message
+                                        }
                                     }
                                     elements.playerMessageArea.innerHTML = errorMsg;
                                     elements.playerMessageArea.style.display = 'block';
@@ -4489,13 +4524,17 @@
                     });
 
                     window.hls = hls;
-                    elements.player.play().catch(e => console.warn("Autoplay was prevented:", e));
 
-                } else if (elements.player.canPlayType('application/vnd.apple.mpegurl')) {
-                    console.log("Native HLS is supported, loading .m3u8 stream.");
-                    elements.player.src = url;
-                    elements.player.addEventListener('loadedmetadata', () => {
-                        elements.player.play().catch(e => console.warn("Autoplay was prevented:", e));
+                } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                    console.log("Native HLS is supported, loading .m3u8 stream via proxy.");
+                    videoElement.src = proxyUrl;
+                    // For native HLS, we can initialize Plyr right away
+                    playerInstance = new Plyr(videoElement, {
+                        captions: { active: true, update: true, language: 'en' },
+                    });
+                    window.player = playerInstance;
+                    videoElement.addEventListener('loadedmetadata', () => {
+                        videoElement.play().catch(e => console.warn("Autoplay was prevented:", e));
                     });
                 } else {
                     console.error("HLS is not supported on this browser.");
