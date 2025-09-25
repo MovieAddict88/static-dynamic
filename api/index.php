@@ -1,137 +1,74 @@
 <?php
-// Public API for CineCraze
-
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *'); // Allow requests from any origin
 
-require_once __DIR__ . '/../includes/db.php';
+require_once '../includes/db.php';
 
-// --- Helper Functions ---
-
-function api_error($message) {
-    echo json_encode(['status' => 'error', 'message' => $message]);
-    exit;
+// Check for database connection errors
+if ($db->connect_error) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Database connection failed: ' . $db->connect_error]);
+    exit();
 }
 
-// --- Main Logic ---
+try {
+    // Initialize the main structure
+    $response = [
+        'Categories' => [
+            ['MainCategory' => 'Live TV', 'SubCategories' => [], 'Entries' => []],
+            ['MainCategory' => 'Movies', 'SubCategories' => [], 'Entries' => []],
+            ['MainCategory' => 'TV Series', 'SubCategories' => [], 'Entries' => []]
+        ]
+    ];
 
-$action = $_GET['action'] ?? '';
+    // Fetch all content
+    $sql = "SELECT id, title, description, poster, year, rating, type, video_url, created_at FROM contents ORDER BY created_at DESC";
+    $stmt = $db->prepare($sql);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
-switch ($action) {
-    case 'get_content':
-        $type = $_GET['type'] ?? 'all'; // movie, series, live, all
-        $genre = $_GET['genre'] ?? 'all';
-        $year = $_GET['year'] ?? 'all';
-        $sort = $_GET['sort'] ?? 'newest';
-        $page = (int)($_GET['page'] ?? 1);
-        $limit = 20;
-        $offset = ($page - 1) * $limit;
+    if ($result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $entry = [
+                'Title' => $row['title'],
+                'Description' => $row['description'],
+                'Poster' => $row['poster'],
+                'Thumbnail' => $row['poster'], // Use poster as thumbnail for simplicity
+                'Rating' => (float)$row['rating'],
+                'Year' => (int)$row['year'],
+                'Servers' => [
+                    [
+                        'name' => 'Main Server',
+                        'url' => $row['video_url']
+                    ]
+                ]
+                // Other fields like SubCategory, Country, Duration etc. can be added if they exist in the DB
+            ];
 
-        $sql = "SELECT c.* FROM content c";
-        $where = [];
-        $params = [];
-
-        if ($type !== 'all') {
-            $where[] = "c.type = ?";
-            $params[] = $type;
-        }
-
-        // Note: Genre and Year filtering would require more complex joins.
-        // This is a simplified version for now.
-
-        $sql .= !empty($where) ? " WHERE " . implode(" AND ", $where) : "";
-
-        switch ($sort) {
-            case 'popular':
-                $sql .= " ORDER BY c.rating DESC";
-                break;
-            case 'rating':
-                 $sql .= " ORDER BY c.rating DESC";
-                break;
-            default: // newest
-                $sql .= " ORDER BY c.year DESC, c.id DESC";
-                break;
-        }
-
-        // Get total count for pagination
-        $count_sql = "SELECT COUNT(*) FROM content c" . (!empty($where) ? " WHERE " . implode(" AND ", $where) : "");
-        $count_stmt = $pdo->prepare($count_sql);
-        $count_stmt->execute($params);
-        $total_items = $count_stmt->fetchColumn();
-        $total_pages = ceil($total_items / $limit);
-
-        $sql .= " LIMIT ? OFFSET ?";
-        $params[] = $limit;
-        $params[] = $offset;
-
-        $stmt = $pdo->prepare($sql);
-        // PDO requires integer type for LIMIT and OFFSET
-        foreach($params as $key => $param){
-            $stmt->bindValue($key+1, $param, is_int($param) ? PDO::PARAM_INT : PDO::PARAM_STR);
-        }
-        $stmt->execute();
-        $content = $stmt->fetchAll();
-
-        echo json_encode([
-            'status' => 'success',
-            'page' => $page,
-            'total_pages' => $total_pages,
-            'total_items' => $total_items,
-            'data' => $content
-        ]);
-        break;
-
-    case 'get_details':
-        $id = (int)($_GET['id'] ?? 0);
-        if ($id <= 0) api_error('Invalid content ID.');
-
-        $stmt = $pdo->prepare("SELECT * FROM content WHERE id = ?");
-        $stmt->execute([$id]);
-        $content = $stmt->fetch();
-
-        if (!$content) api_error('Content not found.');
-
-        if ($content['type'] === 'series') {
-            $seasons_stmt = $pdo->prepare("SELECT * FROM seasons WHERE content_id = ? ORDER BY season_number ASC");
-            $seasons_stmt->execute([$id]);
-            $seasons = $seasons_stmt->fetchAll();
-
-            foreach ($seasons as $key => $season) {
-                $episodes_stmt = $pdo->prepare("SELECT * FROM episodes WHERE season_id = ? ORDER BY episode_number ASC");
-                $episodes_stmt->execute([$season['id']]);
-                $episodes = $episodes_stmt->fetchAll();
-
-                foreach ($episodes as $e_key => $episode) {
-                    $servers_stmt = $pdo->prepare("SELECT name, url FROM servers WHERE episode_id = ?");
-                    $servers_stmt->execute([$episode['id']]);
-                    $episodes[$e_key]['servers'] = $servers_stmt->fetchAll();
-                }
-                $seasons[$key]['episodes'] = $episodes;
+            switch ($row['type']) {
+                case 'movie':
+                    $response['Categories'][1]['Entries'][] = $entry;
+                    break;
+                case 'series':
+                    // For series, you would typically fetch seasons and episodes here
+                    // This is a simplified version
+                    $response['Categories'][2]['Entries'][] = $entry;
+                    break;
+                case 'live':
+                    $response['Categories'][0]['Entries'][] = $entry;
+                    break;
             }
-            $content['seasons'] = $seasons;
-        } else {
-            // For movies and live TV
-            $servers_stmt = $pdo->prepare("SELECT name, url FROM servers WHERE content_id = ?");
-            $servers_stmt->execute([$id]);
-            $content['servers'] = $servers_stmt->fetchAll();
         }
+    }
 
-        echo json_encode(['status' => 'success', 'data' => $content]);
-        break;
+    $stmt->close();
+    $db->close();
 
-    case 'search':
-        $query = $_GET['q'] ?? '';
-        if (empty($query)) api_error('Search query is required.');
+    // Output the final JSON
+    echo json_encode($response, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-        $stmt = $pdo->prepare("SELECT id, title, type, poster, year FROM content WHERE title LIKE ? LIMIT 10");
-        $stmt->execute(["%{$query}%"]);
-        $results = $stmt->fetchAll();
-
-        echo json_encode(['status' => 'success', 'data' => $results]);
-        break;
-
-    default:
-        api_error('Invalid API action.');
-        break;
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'An unexpected error occurred: ' . $e->getMessage()]);
 }
 ?>

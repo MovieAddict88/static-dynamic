@@ -1,11 +1,18 @@
 <?php
 session_start();
 
-// If not logged in, redirect to login page
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login.php');
+// This script should be included by other admin pages.
+// It checks if the user is logged in and if the config file exists.
+
+// Check if config file exists. If not, redirect to install.
+if (!file_exists(__DIR__ . '/../includes/config.php')) {
+    header('Location: ../install.php');
     exit;
 }
 
-// Optional: You can add activity timeout logic here in the future
+// Check if the user is logged in. If not, redirect to the login page.
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
 ?>

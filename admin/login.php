@@ -1,44 +1,53 @@
 <?php
 session_start();
 
-// If already logged in, redirect to dashboard
-if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
-    header('Location: dashboard.php');
+// If config doesn't exist, redirect to installer
+if (!file_exists(__DIR__ . '/../includes/config.php')) {
+    header('Location: ../install.php');
+    exit;
+}
+require_once __DIR__ . '/../includes/config.php';
+
+// If user is already logged in, redirect to dashboard
+if (isset($_SESSION['user_id'])) {
+    header("Location: dashboard.php");
     exit;
 }
 
-require_once __DIR__ . '/../includes/db.php';
+$error_message = '';
 
-$error = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $username = $_POST['username'];
+    $password = $_POST['password'];
 
     if (empty($username) || empty($password)) {
-        $error = 'Username and password are required.';
+        $error_message = "Please enter both username and password.";
     } else {
-        try {
-            $stmt = $pdo->prepare("SELECT * FROM admins WHERE username = ?");
-            $stmt->execute([$username]);
-            $admin = $stmt->fetch();
+        // Prepare and execute statement to find user
+        $stmt = $conn->prepare("SELECT id, password FROM users WHERE username = ?");
+        $stmt->bind_param("s", $username);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-            if ($admin && password_verify($password, $admin['password'])) {
-                // Password is correct, start session
-                $_SESSION['admin_logged_in'] = true;
-                $_SESSION['admin_username'] = $admin['username'];
-                $_SESSION['admin_id'] = $admin['id'];
-                header('Location: dashboard.php');
+        if ($result->num_rows == 1) {
+            $user = $result->fetch_assoc();
+            // Verify password
+            if (password_verify($password, $user['password'])) {
+                // Password is correct, start a new session
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['username'] = $username;
+                header("Location: dashboard.php");
                 exit;
             } else {
-                $error = 'Invalid username or password.';
+                $error_message = "Invalid username or password.";
             }
-        } catch (PDOException $e) {
-            $error = 'Database error. Please try again later.';
-            // Log the error
-            error_log($e->getMessage());
+        } else {
+            $error_message = "Invalid username or password.";
         }
+        $stmt->close();
     }
+    $conn->close();
 }
 ?>
 <!DOCTYPE html>
@@ -48,18 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Login - CineCraze</title>
     <style>
-        :root {
-            --primary: #e50914;
-            --primary-dark: #b8070f;
-            --background: #141414;
-            --surface: #1a1a1a;
-            --text: #ffffff;
-            --danger: #f40612;
-        }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--background);
-            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #141414;
+            color: #fff;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -67,74 +68,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin: 0;
         }
         .login-container {
+            background-color: #1f1f1f;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             width: 100%;
             max-width: 400px;
-            padding: 40px;
-            background-color: var(--surface);
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        h1 {
-            color: var(--primary);
             text-align: center;
+        }
+        .login-container h1 {
+            color: #e50914;
             margin-bottom: 30px;
         }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-        input[type="text"], input[type="password"] {
+        .login-form input {
             width: 100%;
             padding: 12px;
-            border: 1px solid #444;
-            border-radius: 6px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            border: 1px solid #333;
             background-color: #333;
-            color: var(--text);
+            color: #fff;
             font-size: 16px;
-            box-sizing: border-box;
         }
-        .btn {
+        .login-form input:focus {
+            outline: none;
+            border-color: #e50914;
+        }
+        .login-form button {
             width: 100%;
-            padding: 15px;
-            background-color: var(--primary);
-            color: white;
+            padding: 12px;
             border: none;
-            border-radius: 6px;
-            font-size: 18px;
+            border-radius: 4px;
+            background-color: #e50914;
+            color: #fff;
+            font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            margin-top: 10px;
+            transition: background-color 0.3s;
         }
-        .error {
-            color: var(--danger);
-            background-color: rgba(244, 6, 18, 0.1);
-            padding: 10px;
-            border-radius: 6px;
-            text-align: center;
-            margin-bottom: 20px;
+        .login-form button:hover {
+            background-color: #b20710;
+        }
+        .error-message {
+            color: #e87c03;
+            margin-bottom: 15px;
+            text-align: left;
         }
     </style>
 </head>
 <body>
     <div class="login-container">
         <h1>Admin Login</h1>
-        <?php if ($error): ?>
-            <p class="error"><?php echo htmlspecialchars($error); ?></p>
-        <?php endif; ?>
-        <form method="POST" action="login.php">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit" class="btn">Log In</button>
+        <form class="login-form" method="POST" action="login.php">
+            <?php if ($error_message): ?>
+                <p class="error-message"><?php echo $error_message; ?></p>
+            <?php endif; ?>
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Log In</button>
         </form>
     </div>
 </body>
