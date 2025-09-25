@@ -3157,6 +3157,7 @@
     </footer>
 
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.3.7/shaka-player.compiled.js"></script>
     <script>
@@ -3675,95 +3676,49 @@
             return mergeCineDataSegments(segments);
         }
         
-        // Enhanced data fetching with IndexedDB caching
+        // New data fetching function that uses the PHP API
         async function fetchData() {
-            let db;
+            elements.loadingSpinner.style.display = 'block';
             try {
-                db = await dbUtil.open();
-                const cachedData = await dbUtil.get(db, PLAYLIST_KEY);
+                const response = await fetch('api.php?action=get_all_content');
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                cineData = data;
+                console.log("✅ Loaded data from PHP API");
 
-                if (cachedData) {
-                    cineData = cachedData;
-                    console.log("✅ Loaded data from IndexedDB cache");
-                    return; // Exit early if we have cached data
+                // Optional: Cache the data to IndexedDB if you want to keep offline capabilities
+                try {
+                    const db = await dbUtil.open();
+                    await dbUtil.set(db, PLAYLIST_KEY, cineData);
+                    db.close();
+                    console.log("✅ Data cached in IndexedDB");
+                } catch(dbError) {
+                    console.warn("Could not cache data to IndexedDB", dbError);
                 }
 
-                console.log("ℹ️ No cache found in IndexedDB. Fetching from network...");
-                elements.progressBarContainer.style.display = 'block';
-                elements.loadingSpinner.style.display = 'none';
-                
-                const primaryUrl = "https://github.com/MovieAddict88/Movie-Source/raw/main/playlist.json";
-                const fallbackUrls = [
-                    "https://raw.githubusercontent.com/MovieAddict88/Movie-Source/main/playlist.json",
-                    "https://cdn.jsdelivr.net/gh/MovieAddict88/Movie-Source@main/playlist.json",
-                    "./playlist.json",
-                    "./data/playlist.json"
-                ];
-                
-                const allCandidateUrls = [primaryUrl, ...fallbackUrls];
-                for (const candidate of allCandidateUrls) {
-                    try {
-                        console.log(`🔎 Trying segmented playlists from: ${getBasePathFromUrl(candidate)}`);
-                        const segmented = await tryFetchSegmented(candidate);
-                        if (segmented && segmented.Categories && segmented.Categories.length > 0) {
-                            cineData = segmented;
-                            await dbUtil.set(db, PLAYLIST_KEY, cineData);
-                            console.log(`✅ Loaded and cached segmented data from base: ${getBasePathFromUrl(candidate)}`);
-                            return;
-                        }
-                    } catch (err) {
-                        console.warn(`⚠️ Segmented fetch failed for ${candidate}`, err);
-                    }
-                    try {
-                        console.log(`🔄 Trying monolithic playlist: ${candidate}`);
-                        elements.progressBarText.textContent = `Trying monolithic playlist...`;
-                        const response = await fetch(withCacheBuster(candidate));
-                        if (response.ok) {
-                            cineData = await response.json();
-                            await dbUtil.set(db, PLAYLIST_KEY, cineData);
-                            console.log(`✅ Loaded and cached data from: ${candidate}`);
-                            return;
-                        }
-                    } catch (err) {
-                        console.warn(`⚠️ Monolithic fetch failed for ${candidate}`, err);
-                    }
-                }
-                
-                throw new Error("All data sources failed");
-                
             } catch (err) {
-                console.error("❌ All data sources failed:", err);
-                
+                console.error("❌ Failed to fetch data from API:", err);
                 const errorMessage = document.createElement('div');
                 errorMessage.style.cssText = `
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: var(--youtube-gray);
-                    padding: 20px;
-                    border-radius: 8px;
-                    text-align: center;
-                    z-index: 10000;
-                    max-width: 400px;
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background: var(--youtube-gray); padding: 20px; border-radius: 8px; text-align: center;
+                    z-index: 10000; max-width: 400px;
                 `;
                 errorMessage.innerHTML = `
                     <h3>⚠️ Data Loading Failed</h3>
-                    <p>Unable to load content data. Please check your internet connection and try again.</p>
-                    <button onclick="this.parentElement.remove(); window.location.reload();" style="
-                        background: var(--primary);
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 4px;
-                        cursor: pointer;
-                        margin-top: 10px;
+                    <p>Could not load content from the server: ${err.message}.</p>
+                    <button onclick="window.location.reload();" style="
+                        background: var(--primary); color: white; border: none; padding: 10px 20px;
+                        border-radius: 4px; cursor: pointer; margin-top: 10px;
                     ">Retry</button>
                 `;
                 document.body.appendChild(errorMessage);
             } finally {
-                if (db) db.close();
-                elements.progressBarContainer.style.display = 'none';
                 elements.loadingSpinner.style.display = 'none';
             }
         }
@@ -4486,7 +4441,108 @@
 
         // Play URL with YouTube and Vidsrc support
         async function playUrl(url, servers = []) {
-            if (!url || !playerInstance) return;
+            if (!url) return;
+
+            // Destroy previous instances to ensure a clean state
+            if (playerInstance) {
+                playerInstance.destroy();
+                playerInstance = null;
+            }
+            if (window.hls) {
+                window.hls.destroy();
+                window.hls = null;
+            }
+
+            const videoElement = document.getElementById('player');
+
+            // HLS.js integration for .m3u8 streams
+            if (url.includes('.m3u8')) {
+                const proxyUrl = `proxy.php?url=${encodeURIComponent(url)}`;
+
+                if (Hls.isSupported()) {
+                    console.log("HLS.js is supported, creating new instance for:", proxyUrl);
+                    const hls = new Hls({
+                        debug: false, // Set to true for more verbose logging
+                    });
+
+                    hls.loadSource(proxyUrl);
+                    hls.attachMedia(videoElement);
+
+                    let timeout;
+                    const manifestLoadingTimeout = 15000; // 15 seconds
+
+                    // Set a timeout for the manifest loading
+                    timeout = setTimeout(() => {
+                        console.error("HLS manifest loading timed out.");
+                        elements.playerMessageArea.innerHTML = '<b>Video Timed Out</b><br>The video could not be loaded in a reasonable amount of time. Please check the source or try again later.';
+                        elements.playerMessageArea.style.display = 'block';
+                        hls.destroy();
+                    }, manifestLoadingTimeout);
+
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        console.log("HLS manifest parsed, initializing Plyr.");
+                        clearTimeout(timeout); // Clear the timeout as loading was successful
+                        playerInstance = new Plyr(videoElement, {
+                            captions: { active: true, update: true, language: 'en' },
+                        });
+                        window.player = playerInstance;
+                        videoElement.play().catch(e => console.warn("Autoplay was prevented:", e));
+                    });
+
+                    hls.on(Hls.Events.ERROR, function (event, data) {
+                        console.error('HLS.js Error:', JSON.stringify(data, null, 2));
+                        clearTimeout(timeout); // Clear the timeout on error as well
+                        if (data.fatal) {
+                            switch (data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    let errorMsg = '<b>Video Load Error</b><br>A network error occurred.';
+                                    // Check if the response from the proxy contains a JSON error
+                                    if (data.response && data.response.data) {
+                                        try {
+                                            const errorJson = JSON.parse(new TextDecoder().decode(data.response.data));
+                                            if (errorJson.error) {
+                                                errorMsg += `<br>Details: ${errorJson.error} - ${errorJson.details || ''}`;
+                                            }
+                                        } catch (e) {
+                                            // Not a JSON error, stick with the generic message
+                                        }
+                                    }
+                                    elements.playerMessageArea.innerHTML = errorMsg;
+                                    elements.playerMessageArea.style.display = 'block';
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    console.log('Attempting to recover from media error...');
+                                    hls.recoverMediaError();
+                                    break;
+                                default:
+                                    elements.playerMessageArea.textContent = 'An unrecoverable error occurred during playback.';
+                                    elements.playerMessageArea.style.display = 'block';
+                                    hls.destroy();
+                                    break;
+                            }
+                        }
+                    });
+
+                    window.hls = hls;
+
+                } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                    console.log("Native HLS is supported, loading .m3u8 stream via proxy.");
+                    videoElement.src = proxyUrl;
+                    // For native HLS, we can initialize Plyr right away
+                    playerInstance = new Plyr(videoElement, {
+                        captions: { active: true, update: true, language: 'en' },
+                    });
+                    window.player = playerInstance;
+                    videoElement.addEventListener('loadedmetadata', () => {
+                        videoElement.play().catch(e => console.warn("Autoplay was prevented:", e));
+                    });
+                } else {
+                    console.error("HLS is not supported on this browser.");
+                    elements.playerMessageArea.textContent = 'This browser does not support HLS playback.';
+                    elements.playerMessageArea.style.display = 'block';
+                }
+                return; // Exit after handling HLS
+            }
 
             const playerContainer = document.querySelector('.player-container');
             let iframe = playerContainer.querySelector('iframe.external-content-iframe');
