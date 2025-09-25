@@ -46,6 +46,7 @@ function handle_browse_regional() {
     $year = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
     $type = isset($_GET['type']) ? trim($_GET['type']) : 'movie';
     $apiKey = isset($_GET['apiKey']) ? trim($_GET['apiKey']) : 'ec926176bf467b3f7735e3154238c161';
+    $max_pages_to_fetch = 10; // Set the number of pages to fetch
 
     $regionalConfigs = [
         'hollywood' => ['with_original_language' => 'en'],
@@ -79,13 +80,19 @@ function handle_browse_regional() {
             }
         }
 
-        $data = fetchTMDB($endpoint, $apiKey, $queryParams);
+        for ($page = 1; $page <= $max_pages_to_fetch; $page++) {
+            $queryParams['page'] = $page;
+            $data = fetchTMDB($endpoint, $apiKey, $queryParams);
 
-        if (isset($data['results'])) {
-            foreach ($data['results'] as &$item) {
-                $item['media_type'] = $fetchType;
+            if (isset($data['results']) && !empty($data['results'])) {
+                foreach ($data['results'] as &$item) {
+                    $item['media_type'] = $fetchType;
+                }
+                $results = array_merge($results, $data['results']);
+            } else {
+                // If a page returns no results, stop fetching for this type
+                break;
             }
-            $results = array_merge($results, $data['results']);
         }
     }
 
