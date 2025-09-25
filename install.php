@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "CREATE TABLE IF NOT EXISTS `users` (
                         `id` INT AUTO_INCREMENT PRIMARY KEY,
                         `username` VARCHAR(50) NOT NULL UNIQUE,
-                        `password` VARCHAR(255) NOT NULL
+                        `password_hash` VARCHAR(255) NOT NULL
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
 
                     "CREATE TABLE IF NOT EXISTS `content` (
@@ -178,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $hashed_password = password_hash($admin_pass, PASSWORD_DEFAULT);
-                $stmt = $conn->prepare("INSERT INTO `users` (username, password) VALUES (?, ?)");
+                $stmt = $conn->prepare("INSERT INTO `users` (username, password_hash) VALUES (?, ?)");
                 $stmt->bind_param("ss", $admin_user, $hashed_password);
 
                 if (!$stmt->execute()) {

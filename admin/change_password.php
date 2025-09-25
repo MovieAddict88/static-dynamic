@@ -16,8 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $error_message = "New passwords do not match.";
     } else {
         // Get the current user's hashed password from the database
-        $user_id = $_SESSION['user_id'];
-        $stmt = $conn->prepare("SELECT password FROM users WHERE id = ?");
+        $user_id = $_SESSION['admin_user_id'];
+        $stmt = $conn->prepare("SELECT password_hash FROM users WHERE id = ?");
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -25,12 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->close();
 
         // Verify the old password
-        if (password_verify($old_password, $user['password'])) {
+        if (password_verify($old_password, $user['password_hash'])) {
             // Hash the new password
             $new_hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
 
             // Update the password in the database
-            $update_stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+            $update_stmt = $conn->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
             $update_stmt->bind_param("si", $new_hashed_password, $user_id);
             if ($update_stmt->execute()) {
                 $success_message = "Password changed successfully!";
