@@ -154,7 +154,7 @@ if ($content['type'] === 'series') {
             </div>
             <?php
             function render_server_inputs($servers, $name_prefix, $all_servers, $enabled_server_urls, $contentId) {
-                echo "<div class='servers-header'><h3><i class='fas fa-link'></i> Servers</h3><form action='edit_content.php?id={$contentId}&action=apply_servers' method='POST' style='display: inline;'><button type='submit' class='btn btn-secondary btn-small'>Apply Configured Servers</button></form></div>";
+                echo "<div class='servers-header'><h3><i class='fas fa-link'></i> Servers</h3><button type='submit' formaction='edit_content.php?id={$contentId}&action=apply_servers' class='btn btn-secondary btn-small'>Apply Configured Servers</button></div>";
                 echo "<div class='servers-container' id='servers-{$name_prefix}'>";
                 if (empty($servers)) echo "<p>No servers attached.</p>";
                 foreach ($servers as $server) {
@@ -181,7 +181,7 @@ if ($content['type'] === 'series') {
                 <?php render_server_inputs($content['servers'], 'servers', $all_configured_servers, $enabled_server_urls, $contentId); ?>
             <?php else: ?>
             <div class="form-group">
-                 <div class='servers-header'><h3><i class="fas fa-list-ul"></i> Seasons & Episodes</h3><form action='edit_content.php?id=<?php echo $contentId; ?>&action=apply_servers' method='POST' style='display: inline;'><button type='submit' class='btn btn-secondary btn-small'>Apply Configured Servers to All Episodes</button></form></div>
+                 <div class='servers-header'><h3><i class="fas fa-list-ul"></i> Seasons & Episodes</h3><button type='submit' formaction='edit_content.php?id=<?php echo $contentId; ?>&action=apply_servers' class='btn btn-secondary btn-small'>Apply Configured Servers to All Episodes</button></div>
                 <?php foreach ($content['seasons'] as $season): ?>
                 <div class="season-group"><h4>Season <?php echo $season['season_number']; ?></h4>
                     <?php foreach ($season['episodes'] as $episode): ?>
