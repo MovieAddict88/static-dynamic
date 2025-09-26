@@ -3157,8 +3157,9 @@
     </footer>
 
 <?php
-    // Fetch data from the new API endpoint
-    $json_data = file_get_contents('http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/api/get_public_content.php');
+    require_once __DIR__ . '/api/get_public_content.php';
+    $cine_data_array = get_public_content();
+    $json_data = json_encode($cine_data_array);
 ?>
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>

@@ -2,7 +2,7 @@
 require_once 'config.php';
 
 // If user is already logged in, redirect to admin panel
-if (isset($_SESSION['user_id'])) {
+if (isset($_SESSION["loggedin"]) && $_SESSION["loggedin"] === true) {
     header("Location: admin.php");
     exit;
 }

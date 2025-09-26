@@ -4825,7 +4825,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        action: 'genre-based',
+                        bulk_type: 'genre-based', // Corrected parameter
                         genreId: genreId,
                         count: count,
                         contentType: contentType,
@@ -5375,82 +5375,93 @@ Proceed with removal?`;
             }
         }
 
-        // Preview and management functions
-        function updatePreview() {
+        async function updatePreview() {
             const filter = document.getElementById('preview-filter')?.value || 'all';
             const searchTerm = document.getElementById('preview-search')?.value.toLowerCase() || '';
             const container = document.getElementById('content-preview');
             
             if (!container) return;
-            
-            let allItems = [];
-            
-            // Collect items from all categories based on filter
-            currentData.Categories.forEach(category => {
-                category.Entries.forEach(entry => {
-                    let itemType = '';
-                    if (category.MainCategory === "Movies") itemType = 'movie';
-                    else if (category.MainCategory === "TV Series") itemType = 'series';
-                    else if (category.MainCategory === "Live TV") itemType = 'live';
-                    
-                    const typeMatch = (filter === 'all' || filter === itemType);
-                    const searchMatch = (entry.Title.toLowerCase().includes(searchTerm));
 
-                    if (typeMatch && searchMatch) {
-                        allItems.push({
-                            ...entry,
-                            type: itemType,
-                            category: category.MainCategory,
-                            image: entry.Poster || entry.Thumbnail,
-                            title: entry.Title,
-                            description: entry.Description,
-                            year: entry.Year,
-                            rating: entry.Rating,
-                            sources: entry.Servers || []
-                        });
-                    }
+            container.innerHTML = '<div class="loading"></div>'; // Show loading spinner
+
+            try {
+                const response = await fetch('api/get_public_content.php');
+                const data = await response.json();
+
+                if (!data || !data.Categories) {
+                    container.innerHTML = '<p>No content found or failed to load data.</p>';
+                    return;
+                }
+
+                let allItems = [];
+
+                data.Categories.forEach(category => {
+                    category.Entries.forEach(entry => {
+                        let itemType = entry.type || '';
+
+                        const typeMatch = (filter === 'all' || filter === itemType);
+                        const searchMatch = (entry.Title.toLowerCase().includes(searchTerm));
+
+                        if (typeMatch && searchMatch) {
+                            allItems.push({
+                                ...entry,
+                                type: itemType,
+                                category: category.MainCategory,
+                                image: entry.Poster || entry.Thumbnail,
+                                title: entry.Title,
+                                description: entry.Description,
+                                year: entry.Year,
+                                rating: entry.Rating,
+                                sources: entry.Servers || []
+                            });
+                        }
+                    });
                 });
-            });
 
-            const totalPages = Math.ceil(allItems.length / itemsPerPage);
-            currentPage = Math.max(1, Math.min(currentPage, totalPages));
+                const totalPages = Math.ceil(allItems.length / itemsPerPage);
+                currentPage = Math.max(1, Math.min(currentPage, totalPages));
 
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = startIndex + itemsPerPage;
-            const itemsToRender = allItems.slice(startIndex, endIndex);
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const endIndex = startIndex + itemsPerPage;
+                const itemsToRender = allItems.slice(startIndex, endIndex);
 
-            container.innerHTML = '';
-            const fragment = document.createDocumentFragment();
+                container.innerHTML = '';
+                const fragment = document.createDocumentFragment();
 
-            itemsToRender.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'preview-item';
-                
-                div.innerHTML = `
-                    <img src="${item.image || 'https://via.placeholder.com/300x450?text=No+Image'}" 
-                         alt="${item.title}" loading="lazy">
-                    <div class="info">
-                        <div class="title">${item.title}</div>
-                        <div class="meta">${item.year || 'Unknown'} • ${item.parentalRating || 'N/A'} • ${item.type?.toUpperCase()} • Rating: ${item.rating || 'N/A'}</div>
-                        <div class="meta">Category: ${item.category} • SubCategory: ${item.SubCategory || 'N/A'}</div>
-                        <div class="meta">Servers: ${item.sources?.length || 0}</div>
-                        <div style="margin-top: 10px;">
-                            <button class="btn btn-secondary btn-small" onclick="editContent('${item.Title}', '${item.category}')">Edit</button>
-                            <button class="btn btn-warning btn-small" onclick="addServerToContent('${item.Title}', '${item.category}')">Add Server</button>
-                            <button class="btn btn-danger btn-small" onclick="deleteContent('${item.Title}', '${item.category}')">Delete</button>
+                itemsToRender.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'preview-item';
+
+                    div.innerHTML = `
+                        <img src="${item.image || 'https://via.placeholder.com/300x450?text=No+Image'}"
+                             alt="${item.title}" loading="lazy">
+                        <div class="info">
+                            <div class="title">${item.title}</div>
+                            <div class="meta">${item.year || 'Unknown'} • ${item.parentalRating || 'N/A'} • ${item.type?.toUpperCase()} • Rating: ${item.rating || 'N/A'}</div>
+                            <div class="meta">Category: ${item.category} • SubCategory: ${item.SubCategory || 'N/A'}</div>
+                            <div class="meta">Servers: ${item.sources?.length || 0}</div>
+                            <div style="margin-top: 10px;">
+                                <button class="btn btn-secondary btn-small" onclick="editContent('${item.title}', '${item.category}')">Edit</button>
+                                <button class="btn btn-warning btn-small" onclick="addServerToContent('${item.title}', '${item.category}')">Add Server</button>
+                                <button class="btn btn-danger btn-small" onclick="deleteContent('${item.title}', '${item.category}')">Delete</button>
+                            </div>
                         </div>
-                    </div>
-                `;
-                
-                fragment.appendChild(div);
-            });
+                    `;
 
-            container.appendChild(fragment);
+                    fragment.appendChild(div);
+                });
 
-            // Update pagination controls
-            document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages || 1}`;
-            document.getElementById('prev-page').disabled = currentPage === 1;
-            document.getElementById('next-page').disabled = currentPage === totalPages || totalPages === 0;
+                container.appendChild(fragment);
+
+                // Update pagination controls
+                document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages || 1}`;
+                document.getElementById('prev-page').disabled = currentPage === 1;
+                document.getElementById('next-page').disabled = currentPage === totalPages || totalPages === 0;
+
+            } catch(error) {
+                console.error("Failed to update preview:", error);
+                container.innerHTML = '<p class="status error">Failed to load preview data. Please check the console for errors.</p>';
+            }
         }
 
         function editContent(title, category) {
