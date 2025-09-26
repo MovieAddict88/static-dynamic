@@ -1,4 +1,13 @@
-      <!DOCTYPE html>
+<?php
+require_once '../config.php';
+
+// Check if user is logged in, otherwise redirect to login page
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
+}
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2722,6 +2731,38 @@ jobs:
                 <div id="content-preview" class="preview-grid"></div>
             </div>
         </div>
+
+        <!-- Settings Tab -->
+        <div id="settings" class="tab-content">
+            <div class="card">
+                <h2>⚙️ Admin Settings</h2>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <h3>Change Password</h3>
+                        <form id="change-password-form">
+                            <div class="form-group">
+                                <label for="current-password">Current Password</label>
+                                <input type="password" id="current-password" name="current_password" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="new-password">New Password</label>
+                                <input type="password" id="new-password" name="new_password" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="confirm-password">Confirm New Password</label>
+                                <input type="password" id="confirm-password" name="confirm_password" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Change Password</button>
+                        </form>
+                        <div id="password-change-status" style="margin-top: 15px;"></div>
+                    </div>
+                    <div class="form-group">
+                        <h3>Session</h3>
+                        <a href="logout.php" class="btn btn-danger">Logout</a>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Bottom Navigation Bar -->
@@ -2743,6 +2784,10 @@ jobs:
                 <div class="nav-icon">🗂️</div>
                 <div class="nav-label">Data</div>
             </div>
+            <div class="nav-item" onclick="switchTab('settings')" role="button" tabindex="0" aria-label="Settings">
+                <div class="nav-icon">⚙️</div>
+                <div class="nav-label">Settings</div>
+            </div>
         </div>
     </nav>
 
@@ -2756,6 +2801,36 @@ jobs:
         </div>
     </div>
     <script>
+        // --- Change Password ---
+        document.getElementById('change-password-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const statusDiv = document.getElementById('password-change-status');
+            statusDiv.className = 'status info';
+            statusDiv.textContent = 'Changing password...';
+            statusDiv.style.display = 'block';
+
+            const formData = new FormData(this);
+
+            fetch('change_password.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.className = 'status success';
+                    this.reset(); // Clear the form
+                } else {
+                    statusDiv.className = 'status error';
+                }
+                statusDiv.textContent = data.message;
+            })
+            .catch(error => {
+                statusDiv.className = 'status error';
+                statusDiv.textContent = 'An error occurred: ' + error.message;
+            });
+        });
         // Debounce function
         function debounce(func, delay) {
             let timeout;
@@ -3693,39 +3768,59 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             });
         }
 
-                 async function generateFromTMDB(type, tmdbId = null) {
-             console.log(`🎬 generateFromTMDB called with type: '${type}', tmdbId: ${tmdbId}`);
-             
-             const id = tmdbId || document.getElementById(`${type}-tmdb-id`).value;
-             
-             if (!id) {
-                 showStatus('warning', 'Please enter a TMDB ID');
-                 return;
-             }
+        async function generateFromTMDB(type, tmdbId = null) {
+            const id = tmdbId || document.getElementById(`${type}-tmdb-id`).value;
+            if (!id) {
+                showStatus('warning', 'Please enter a TMDB ID');
+                return;
+            }
 
-             showLoading(`${type}-loading`, true);
-             showStatus('info', `Generating ${type} with automatic VidSrc & VidJoy sources...`);
-             
-             try {
-                 if (type === 'movie') {
-                     console.log(`🎞️ Generating movie with ID: ${id}`);
-                     await generateMovie(id);
-                 } else if (type === 'series') {
-                     console.log(`📺 Generating series with ID: ${id}`);
-                     await generateSeries(id);
-                 } else {
-                     throw new Error(`Unknown content type: '${type}'. Expected 'movie' or 'series'.`);
-                 }
-                 
-                 updateDataStats();
-                 updatePreview();
-                 showStatus('success', `${type} generated successfully with automatic video sources!`);
-             } catch (error) {
-                 showStatus('error', `Error generating ${type}: ${error.message}`);
-             }
-             
-             showLoading(`${type}-loading`, false);
-         }
+            showLoading(`${type}-loading`, true);
+            showStatus('info', `Sending request to server to generate ${type}...`);
+
+            const formData = new FormData();
+            formData.append('action', `generate_${type}`);
+            formData.append('tmdb_id', id);
+
+            if (type === 'movie') {
+                const serverInputs = document.querySelectorAll('#movie-servers .server-item');
+                const servers = Array.from(serverInputs).map(item => ({
+                    name: item.querySelector('.server-name').value.trim(),
+                    url: item.querySelector('.server-url').value.trim()
+                })).filter(s => s.name && s.url);
+                formData.append('servers', JSON.stringify(servers));
+            } else if (type === 'series') {
+                const seasonsInput = document.getElementById('series-seasons').value.trim();
+                formData.append('seasons', seasonsInput);
+
+                const serverInputs = document.querySelectorAll('#series-servers .server-item');
+                const servers = Array.from(serverInputs).map(item => ({
+                    name: item.querySelector('.server-name').value.trim(),
+                    urlTemplate: item.querySelector('.server-url').value.trim()
+                })).filter(s => s.name && s.urlTemplate);
+                formData.append('servers', JSON.stringify(servers));
+            }
+
+            try {
+                const response = await fetch('ajax_handler.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus('success', result.message);
+                    updateDataStats(); // This will need to be updated to fetch from DB
+                    updatePreview();   // This will need to be updated to fetch from DB
+                } else {
+                    showStatus('error', result.message);
+                }
+            } catch (error) {
+                showStatus('error', `An error occurred: ${error.message}`);
+            } finally {
+                showLoading(`${type}-loading`, false);
+            }
+        }
 
                  async function generateMovie(tmdbId) {
              const movieData = await fetchTMDB(`/movie/${tmdbId}`);
