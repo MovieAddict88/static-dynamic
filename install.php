@@ -1,158 +1,144 @@
 <?php
-// Simple installer for CineCraze
-// This script will create the necessary database tables.
+// Simple installer script for CineCraze
+// This script should be deleted after running it successfully.
 
-// --- IMPORTANT ---
-// 1. CREATE A DATABASE in your hosting panel (e.g., cPanel, InfinityFree Vistapanel).
-// 2. CREATE A DATABASE USER and assign it to the database with ALL PRIVILEGES.
-// 3. UPDATE the config.php file with your database host, name, username, and password.
-// 4. UPLOAD all files to your server.
-// 5. NAVIGATE to this install.php file in your browser to run the installer.
-// 6. DELETE this file after installation is complete for security.
+// --- Database Configuration ---
+// Note: In a real application, this would be in a separate, non-public file.
+$db_host = 'localhost';
+$db_user = 'root';
+$db_pass = '';
+$db_name = 'cinecraze';
 
-// Include the configuration file
-require_once 'config.php';
-
-// --- Installation Logic ---
-$message = "";
-
+// --- Establish Connection ---
 try {
-    // Create a new PDO connection
-    $conn = new PDO("mysql:host=" . DB_HOST, DB_USER, DB_PASS);
-    // Set the PDO error mode to exception
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    // --- Step 1: Create Database if it doesn't exist ---
-    $conn->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $message .= "<p>✅ Database '" . DB_NAME . "' checked/created successfully.</p>";
-
-    // --- Step 2: Select the database ---
-    $conn->exec("USE `" . DB_NAME . "`");
-    $message .= "<p>✅ Selected database '" . DB_NAME . "'.</p>";
-
-    // --- Step 3: Create Tables ---
-    $sql_commands = [
-        "CREATE TABLE IF NOT EXISTS `users` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `username` VARCHAR(50) NOT NULL UNIQUE,
-            `password` VARCHAR(255) NOT NULL,
-            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `content` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `tmdb_id` INT NULL,
-            `type` ENUM('movie', 'series', 'live') NOT NULL,
-            `title` VARCHAR(255) NOT NULL,
-            `description` TEXT,
-            `poster_path` VARCHAR(255),
-            `backdrop_path` VARCHAR(255),
-            `release_date` DATE,
-            `year` YEAR,
-            `runtime` INT,
-            `rating` DECIMAL(3,1),
-            `parental_rating` VARCHAR(20),
-            `genres` TEXT,
-            `trailer_url` VARCHAR(255),
-            `country` VARCHAR(100),
-            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX `type_idx` (`type`),
-            INDEX `year_idx` (`year`),
-            INDEX `rating_idx` (`rating`)
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `seasons` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `content_id` INT NOT NULL,
-            `season_number` INT NOT NULL,
-            `name` VARCHAR(255),
-            `poster_path` VARCHAR(255),
-            FOREIGN KEY (`content_id`) REFERENCES `content`(`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `episodes` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `season_id` INT NOT NULL,
-            `episode_number` INT NOT NULL,
-            `title` VARCHAR(255),
-            `description` TEXT,
-            `still_path` VARCHAR(255),
-            `release_date` DATE,
-            FOREIGN KEY (`season_id`) REFERENCES `seasons`(`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `servers` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `content_id` INT NULL,
-            `episode_id` INT NULL,
-            `name` VARCHAR(255) NOT NULL,
-            `url` TEXT NOT NULL,
-            `quality` VARCHAR(20),
-            FOREIGN KEY (`content_id`) REFERENCES `content`(`id`) ON DELETE CASCADE,
-            FOREIGN KEY (`episode_id`) REFERENCES `episodes`(`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB;"
-    ];
-
-    foreach ($sql_commands as $command) {
-        $conn->exec($command);
-    }
-    $message .= "<p>✅ All tables created successfully.</p>";
-
-    // --- Step 4: Add Default Admin User ---
-    // Check if admin user already exists
-    $stmt = $conn->prepare("SELECT id FROM users WHERE username = 'admin'");
-    $stmt->execute();
-
-    if ($stmt->rowCount() == 0) {
-        $admin_user = 'admin';
-        // IMPORTANT: Use a more secure password in a real application
-        $admin_pass = password_hash('admin123', PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("INSERT INTO users (username, password) VALUES (:username, :password)");
-        $stmt->bindParam(':username', $admin_user);
-        $stmt->bindParam(':password', $admin_pass);
-        $stmt->execute();
-        $message .= "<p>✅ Default admin user created.</p>";
-        $message .= "<p><strong>Username:</strong> admin</p>";
-        $message .= "<p><strong>Password:</strong> admin123</p>";
-    } else {
-        $message .= "<p>ℹ️ Admin user already exists. Skipping creation.</p>";
-    }
-
-    $message .= "<h2>🎉 Installation Complete!</h2>";
-    $message .= "<p style='color:red; font-weight:bold;'>For security reasons, please delete this `install.php` file from your server now.</p>";
-
-} catch(PDOException $e) {
-    $message = "<h2>❌ Installation Failed!</h2>";
-    $message .= "<p>An error occurred: " . $e->getMessage() . "</p>";
-    $message .= "<p>Please check your `config.php` settings and ensure your database user has the correct privileges.</p>";
+    $pdo = new PDO("mysql:host=$db_host", $db_user, $db_pass);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die("Connection failed: " . $e->getMessage());
 }
 
-$conn = null; // Close connection
-?>
+// --- Create Database and Select It ---
+try {
+    $pdo->exec("CREATE DATABASE IF NOT EXISTS `$db_name` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+    $pdo->exec("USE `$db_name`;");
+    echo "Database '$db_name' created or already exists. Now creating tables...<br>";
+} catch (PDOException $e) {
+    die("Database creation failed: " . $e->getMessage());
+}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CineCraze Installer</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #141414; color: #fff; margin: 0; padding: 40px; text-align: center; }
-        .installer-box { background-color: #1f1f1f; border: 1px solid #333; border-radius: 12px; max-width: 700px; margin: auto; padding: 30px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h1 { color: #e50914; }
-        p { line-height: 1.6; color: #e6e6e6; }
-        strong { color: #fff; }
-        h2 { color: #46d369; }
-        code { background-color: #333; padding: 2px 5px; border-radius: 4px; }
-    </style>
-</head>
-<body>
-    <div class="installer-box">
-        <h1>🎬 CineCraze Installer</h1>
-        <hr style="border: 1px solid #333; margin: 20px 0;">
-        <div>
-            <?php echo $message; ?>
-        </div>
-    </div>
-</body>
-</html>
+// --- SQL Statements for Table Creation ---
+$sql = "
+-- Users Table (for admin)
+CREATE TABLE IF NOT EXISTS `users` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `username` VARCHAR(50) NOT NULL UNIQUE,
+    `password` VARCHAR(255) NOT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- Genres Table
+CREATE TABLE IF NOT EXISTS `genres` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `name` VARCHAR(100) NOT NULL UNIQUE
+) ENGINE=InnoDB;
+
+-- Content Table (for movies, series, live TV)
+CREATE TABLE IF NOT EXISTS `content` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `tmdb_id` INT UNIQUE,
+    `title` VARCHAR(255) NOT NULL,
+    `description` TEXT,
+    `poster_url` VARCHAR(255),
+    `thumbnail_url` VARCHAR(255),
+    `content_type` ENUM('movie', 'series', 'live') NOT NULL,
+    `release_date` DATE,
+    `rating` DECIMAL(3,1),
+    `duration_minutes` INT,
+    `parental_rating` VARCHAR(20),
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_content_type` (`content_type`),
+    INDEX `idx_release_date` (`release_date`),
+    INDEX `idx_rating` (`rating`),
+    INDEX `idx_title` (`title`)
+) ENGINE=InnoDB;
+
+-- Content-Genres Pivot Table
+CREATE TABLE IF NOT EXISTS `content_genres` (
+    `content_id` INT NOT NULL,
+    `genre_id` INT NOT NULL,
+    PRIMARY KEY (`content_id`, `genre_id`),
+    FOREIGN KEY (`content_id`) REFERENCES `content`(`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`genre_id`) REFERENCES `genres`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Seasons Table (for TV series)
+CREATE TABLE IF NOT EXISTS `seasons` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `content_id` INT NOT NULL,
+    `season_number` INT NOT NULL,
+    `poster_url` VARCHAR(255),
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `unique_season` (`content_id`, `season_number`),
+    FOREIGN KEY (`content_id`) REFERENCES `content`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Episodes Table (for TV series)
+CREATE TABLE IF NOT EXISTS `episodes` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `season_id` INT NOT NULL,
+    `episode_number` INT NOT NULL,
+    `title` VARCHAR(255) NOT NULL,
+    `description` TEXT,
+    `thumbnail_url` VARCHAR(255),
+    `duration_minutes` INT,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `unique_episode` (`season_id`, `episode_number`),
+    FOREIGN KEY (`season_id`) REFERENCES `seasons`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Servers Table (for video sources)
+CREATE TABLE IF NOT EXISTS `servers` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `content_id` INT,
+    `episode_id` INT,
+    `name` VARCHAR(255) NOT NULL,
+    `url` TEXT NOT NULL,
+    `quality` VARCHAR(50),
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (`content_id`) REFERENCES `content`(`id`) ON DELETE CASCADE,
+    FOREIGN KEY (`episode_id`) REFERENCES `episodes`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+";
+
+// --- Execute SQL and Insert Default Admin User ---
+try {
+    $pdo->exec($sql);
+    echo "Tables created successfully.<br>";
+
+    // Insert a default admin user if one doesn't exist
+    $stmt = $pdo->prepare("SELECT id FROM `users` WHERE username = 'admin'");
+    $stmt->execute();
+    if ($stmt->rowCount() == 0) {
+        $username = 'admin';
+        $password = 'password'; // Default password, user should change this
+        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+
+        $insertStmt = $pdo->prepare("INSERT INTO `users` (username, password) VALUES (:username, :password)");
+        $insertStmt->execute(['username' => $username, 'password' => $hashed_password]);
+        echo "Default admin user created.<br>";
+        echo "<b>Username:</b> admin<br>";
+        echo "<b>Password:</b> password<br>";
+        echo "<strong>IMPORTANT:</strong> Please change this password immediately after logging in.<br>";
+    } else {
+        echo "Admin user already exists.<br>";
+    }
+
+    echo "<h2>Installation Complete!</h2>";
+    echo "<p style='color:red; font-weight:bold;'>Please delete this 'install.php' file from your server now for security reasons.</p>";
+
+} catch (PDOException $e) {
+    die("Table creation or user insertion failed: " . $e->getMessage());
+}
+
+?>

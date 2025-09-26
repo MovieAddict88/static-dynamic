@@ -1,13 +1,13 @@
 <?php
-require_once '../config.php';
+require_once 'config.php';
 
-// Check if user is logged in, otherwise redirect to login page
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
+// Check if the user is logged in, if not then redirect to login page
+if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
+    header("location: login.php");
     exit;
 }
 ?>
-<!DOCTYPE html>
+      <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2731,38 +2731,6 @@ jobs:
                 <div id="content-preview" class="preview-grid"></div>
             </div>
         </div>
-
-        <!-- Settings Tab -->
-        <div id="settings" class="tab-content">
-            <div class="card">
-                <h2>⚙️ Admin Settings</h2>
-                <div class="grid grid-2">
-                    <div class="form-group">
-                        <h3>Change Password</h3>
-                        <form id="change-password-form">
-                            <div class="form-group">
-                                <label for="current-password">Current Password</label>
-                                <input type="password" id="current-password" name="current_password" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="new-password">New Password</label>
-                                <input type="password" id="new-password" name="new_password" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="confirm-password">Confirm New Password</label>
-                                <input type="password" id="confirm-password" name="confirm_password" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Change Password</button>
-                        </form>
-                        <div id="password-change-status" style="margin-top: 15px;"></div>
-                    </div>
-                    <div class="form-group">
-                        <h3>Session</h3>
-                        <a href="logout.php" class="btn btn-danger">Logout</a>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Bottom Navigation Bar -->
@@ -2784,10 +2752,6 @@ jobs:
                 <div class="nav-icon">🗂️</div>
                 <div class="nav-label">Data</div>
             </div>
-            <div class="nav-item" onclick="switchTab('settings')" role="button" tabindex="0" aria-label="Settings">
-                <div class="nav-icon">⚙️</div>
-                <div class="nav-label">Settings</div>
-            </div>
         </div>
     </nav>
 
@@ -2801,36 +2765,6 @@ jobs:
         </div>
     </div>
     <script>
-        // --- Change Password ---
-        document.getElementById('change-password-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const statusDiv = document.getElementById('password-change-status');
-            statusDiv.className = 'status info';
-            statusDiv.textContent = 'Changing password...';
-            statusDiv.style.display = 'block';
-
-            const formData = new FormData(this);
-
-            fetch('change_password.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    statusDiv.className = 'status success';
-                    this.reset(); // Clear the form
-                } else {
-                    statusDiv.className = 'status error';
-                }
-                statusDiv.textContent = data.message;
-            })
-            .catch(error => {
-                statusDiv.className = 'status error';
-                statusDiv.textContent = 'An error occurred: ' + error.message;
-            });
-        });
         // Debounce function
         function debounce(func, delay) {
             let timeout;
@@ -3768,59 +3702,48 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             });
         }
 
-        async function generateFromTMDB(type, tmdbId = null) {
-            const id = tmdbId || document.getElementById(`${type}-tmdb-id`).value;
-            if (!id) {
-                showStatus('warning', 'Please enter a TMDB ID');
-                return;
-            }
+                 async function generateFromTMDB(type, tmdbId = null) {
+             const id_input = document.getElementById(`${type}-tmdb-id`);
+             const id = tmdbId || id_input.value;
 
-            showLoading(`${type}-loading`, true);
-            showStatus('info', `Sending request to server to generate ${type}...`);
+             if (!id) {
+                 showStatus('warning', 'Please enter a TMDB ID');
+                 return;
+             }
 
-            const formData = new FormData();
-            formData.append('action', `generate_${type}`);
-            formData.append('tmdb_id', id);
+             showLoading(`${type}-loading`, true);
+             showStatus('info', `Sending request to server for TMDB ID: ${id}...`);
 
-            if (type === 'movie') {
-                const serverInputs = document.querySelectorAll('#movie-servers .server-item');
-                const servers = Array.from(serverInputs).map(item => ({
-                    name: item.querySelector('.server-name').value.trim(),
-                    url: item.querySelector('.server-url').value.trim()
-                })).filter(s => s.name && s.url);
-                formData.append('servers', JSON.stringify(servers));
-            } else if (type === 'series') {
-                const seasonsInput = document.getElementById('series-seasons').value.trim();
-                formData.append('seasons', seasonsInput);
+             try {
+                 const response = await fetch('api/tmdb_handler.php', {
+                     method: 'POST',
+                     headers: {
+                         'Content-Type': 'application/json',
+                     },
+                     body: JSON.stringify({
+                         type: type,
+                         tmdb_id: id
+                     }),
+                 });
 
-                const serverInputs = document.querySelectorAll('#series-servers .server-item');
-                const servers = Array.from(serverInputs).map(item => ({
-                    name: item.querySelector('.server-name').value.trim(),
-                    urlTemplate: item.querySelector('.server-url').value.trim()
-                })).filter(s => s.name && s.urlTemplate);
-                formData.append('servers', JSON.stringify(servers));
-            }
+                 const result = await response.json();
 
-            try {
-                const response = await fetch('ajax_handler.php', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
-
-                if (result.success) {
-                    showStatus('success', result.message);
-                    updateDataStats(); // This will need to be updated to fetch from DB
-                    updatePreview();   // This will need to be updated to fetch from DB
-                } else {
-                    showStatus('error', result.message);
-                }
-            } catch (error) {
-                showStatus('error', `An error occurred: ${error.message}`);
-            } finally {
-                showLoading(`${type}-loading`, false);
-            }
-        }
+                 if (result.success) {
+                     showStatus('success', result.message);
+                     if (id_input) id_input.value = ''; // Clear input on success
+                     // Optionally, refresh data preview
+                     updateDataStats();
+                     updatePreview();
+                 } else {
+                     showStatus('error', `Error: ${result.message}`);
+                 }
+             } catch (error) {
+                 showStatus('error', 'A network error occurred. Could not connect to the server.');
+                 console.error('Fetch error:', error);
+             } finally {
+                 showLoading(`${type}-loading`, false);
+             }
+         }
 
                  async function generateMovie(tmdbId) {
              const movieData = await fetchTMDB(`/movie/${tmdbId}`);
@@ -4727,120 +4650,113 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         async function addManualContent() {
             const type = document.getElementById('manual-type').value;
             const title = document.getElementById('manual-title').value.trim();
-            const subcategory = document.getElementById('manual-subcategory').value;
-            const country = document.getElementById('manual-country').value.trim();
-            const parentalRating = document.getElementById('manual-parental-rating').value.trim();
-            
             if (!title) {
-                showStatus('warning', 'Please enter a title');
+                showStatus('warning', 'Please enter a title.');
                 return;
             }
 
-            // Get servers
-            const sourceInputs = document.querySelectorAll('#manual-sources .server-item');
+            // Collect servers
+            const serverInputs = document.querySelectorAll('#manual-sources .server-item');
             const servers = [];
-            
-            sourceInputs.forEach(item => {
+            serverInputs.forEach(item => {
                 const name = item.querySelector('.source-name').value.trim();
                 const url = item.querySelector('.source-url').value.trim();
-                
+                const quality = item.querySelector('.source-quality').value;
                 if (name && url) {
-                    servers.push({
-                        name: name,
-                        url: url
-                    });
+                    servers.push({ name, url, quality });
                 }
             });
 
             if (servers.length === 0) {
-                showStatus('warning', 'Please add at least one server');
+                showStatus('warning', 'Please add at least one server source.');
                 return;
             }
 
-            // Create entry object matching JSON structure
-            const entry = {
-                Title: title,
-                SubCategory: subcategory,
-                Country: country,
-                Description: document.getElementById('manual-description').value || 'No description available',
-                Poster: document.getElementById('manual-image').value || '',
-                Thumbnail: document.getElementById('manual-image').value || '',
-                Rating: parseInt(document.getElementById('manual-rating').value) || 0,
-                parentalRating: parentalRating,
-                Servers: servers
+            const data = {
+                type: type,
+                title: title,
+                subcategory: document.getElementById('manual-subcategory').value,
+                country: document.getElementById('manual-country').value.trim(),
+                description: document.getElementById('manual-description').value.trim(),
+                image: document.getElementById('manual-image').value.trim(),
+                year: document.getElementById('manual-year').value,
+                rating: document.getElementById('manual-rating').value,
+                parental_rating: document.getElementById('manual-parental-rating').value.trim(),
+                servers: servers
             };
 
-            // Add additional fields based on type
-            if (type === 'movie' || type === 'series') {
-                entry.Year = parseInt(document.getElementById('manual-year').value) || new Date().getFullYear();
-            }
-            
-            if (type === 'movie') {
-                entry.Duration = "2:00:00"; // Default duration
-            }
-            
+            // Add series data if applicable
             if (type === 'series') {
-                entry.Seasons = []; // Will be populated when seasons are added
-            }
+                data.seasons = [];
+                const seasonContainers = document.querySelectorAll('#season-container .season-group');
+                seasonContainers.forEach((seasonDiv, seasonIndex) => {
+                    const seasonNumber = seasonDiv.querySelector('.season-number-input').value;
+                    if (!seasonNumber) return;
 
-            // Find the appropriate category and add the entry
-            let mainCategory = '';
-            if (type === 'movie') mainCategory = 'Movies';
-            else if (type === 'series') mainCategory = 'TV Series';
-            else if (type === 'live') mainCategory = 'Live TV';
+                    const season = {
+                        season_number: seasonNumber,
+                        episodes: []
+                    };
 
-            const category = currentData.Categories.find(cat => cat.MainCategory === mainCategory);
-            if (category) {
-                // Add subcategory if it doesn't exist
-                if (!category.SubCategories.includes(subcategory)) {
-                    category.SubCategories.push(subcategory);
-                }
-                
-                category.Entries.push(entry);
-            } else {
-                // Create new category if it doesn't exist
-                currentData.Categories.push({
-                    MainCategory: mainCategory,
-                    SubCategories: [subcategory],
-                    Entries: [entry]
+                    const episodeContainers = seasonDiv.querySelectorAll('.episode-group');
+                    episodeContainers.forEach((episodeDiv, episodeIndex) => {
+                        const episodeNumber = episodeDiv.querySelector('.episode-number-input').value;
+                        const episodeTitle = episodeDiv.querySelector('.episode-title-input').value;
+                        if (!episodeNumber || !episodeTitle) return;
+
+                        const episode = {
+                            episode_number: episodeNumber,
+                            title: episodeTitle,
+                            servers: []
+                        };
+
+                        const episodeServerInputs = episodeDiv.querySelectorAll('.server-item');
+                        episodeServerInputs.forEach(serverItem => {
+                            const name = serverItem.querySelector('.source-name').value.trim();
+                            const url = serverItem.querySelector('.source-url').value.trim();
+                            if (name && url) {
+                                episode.servers.push({ name, url });
+                            }
+                        });
+                        season.episodes.push(episode);
+                    });
+                    data.seasons.push(season);
                 });
             }
 
-            await saveData();
-            updateDataStats();
-            updatePreview();
-            showStatus('success', `${title} added to ${mainCategory} successfully!`);
-            
-            // Clear form
-            document.getElementById('manual-title').value = '';
-            document.getElementById('manual-description').value = '';
-            document.getElementById('manual-image').value = '';
-            document.getElementById('manual-year').value = '';
-            document.getElementById('manual-rating').value = '';
-            document.getElementById('manual-country').value = '';
-            document.getElementById('manual-parental-rating').value = '';
-            
-            // Reset sources to one empty item
-            document.getElementById('manual-sources').innerHTML = `
-                <div class="server-item">
-                    <input type="text" placeholder="Source Name" class="source-name">
-                    <input type="url" placeholder="Video URL" class="source-url">
-                    <select class="source-type">
-                        <option value="video">Direct Video</option>
-                        <option value="embed">Embedded</option>
-                        <option value="youtube">YouTube</option>
-                        <option value="live">Live Stream</option>
-                    </select>
-                    <select class="source-quality">
-                        <option value="1080p">1080p</option>
-                        <option value="720p">720p</option>
-                        <option value="480p">480p</option>
-                        <option value="Auto">Auto</option>
-                    </select>
-                    <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
-                    <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
-                </div>
-            `;
+            showStatus('info', `Adding '${title}' to the database...`);
+
+            try {
+                const response = await fetch('api/manual_handler.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus('success', result.message);
+                    // Clear the form
+                    document.getElementById('manual-title').value = '';
+                    document.getElementById('manual-description').value = '';
+                    document.getElementById('manual-image').value = '';
+                    document.getElementById('manual-year').value = '';
+                    document.getElementById('manual-rating').value = '';
+                    document.getElementById('manual-country').value = '';
+                    document.getElementById('manual-parental-rating').value = '';
+                    document.querySelector('#manual-sources .server-item .source-name').value = '';
+                    document.querySelector('#manual-sources .server-item .source-url').value = '';
+                    // Refresh data previews
+                    updateDataStats();
+                    updatePreview();
+                } else {
+                    showStatus('error', `Error: ${result.message}`);
+                }
+            } catch (error) {
+                showStatus('error', 'A network error occurred.');
+                console.error('Fetch error:', error);
+            }
         }
 
         // Bulk operations
@@ -4849,58 +4765,44 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             const year = document.getElementById('bulk-year').value;
             const pages = parseInt(document.getElementById('bulk-pages').value);
             const skipDuplicates = document.getElementById('bulk-skip-duplicates').checked;
-            
+
             showLoading('bulk-loading', true);
-            
-            let generated = 0;
-            let skipped = 0;
-            
-            for (let page = 1; page <= pages; page++) {
-                const results = await fetchTMDB(`/discover/${type}`, {
-                    primary_release_year: type === 'movie' ? year : undefined,
-                    first_air_date_year: type === 'tv' ? year : undefined,
-                    page: page,
-                    sort_by: 'popularity.desc'
+            const statusDiv = document.getElementById('bulk-status');
+            const progressBar = document.getElementById('bulk-progress');
+            progressBar.style.width = '0%';
+            statusDiv.innerHTML = `<div class="status info">Starting year-based bulk generation...</div>`;
+
+            try {
+                const response = await fetch('api/bulk_handler.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'year-based',
+                        type: type,
+                        year: year,
+                        pages: pages,
+                        skipDuplicates: skipDuplicates
+                    })
                 });
-                
-                if (!results?.results) break;
-                
-                for (const item of results.results) {
-                    // Check for duplicates
-                    if (skipDuplicates && isDuplicate(item.id, type)) {
-                        skipped++;
-                        continue;
-                    }
-                    
-                    try {
-                        if (type === 'movie') {
-                            await generateMovie(item.id);
-                        } else {
-                            await generateSeries(item.id);
-                        }
-                        generated++;
-                    } catch (error) {
-                        console.error(`Error generating ${type} ${item.id}:`, error);
-                    }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    statusDiv.innerHTML = `<div class="status success">Bulk generation complete! Generated: ${result.generated}, Skipped: ${result.skipped}</div>`;
+                    showStatus('success', `Bulk generation complete! Generated: ${result.generated}, Skipped: ${result.skipped}`);
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">Error: ${result.message}</div>`;
+                    showStatus('error', `Error: ${result.message}`);
                 }
-                
-                // Update progress
-                const progress = (page / pages) * 100;
-                document.getElementById('bulk-progress').style.width = `${progress}%`;
-                document.getElementById('bulk-status').innerHTML = `
-                    <div class="status info">
-                        Page ${page}/${pages} - Generated: ${generated}, Skipped: ${skipped}
-                    </div>
-                `;
-                
-                // Small delay to prevent API rate limiting
-                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">A network error occurred: ${error.message}</div>`;
+                showStatus('error', 'A network error occurred.');
+            } finally {
+                showLoading('bulk-loading', false);
+                progressBar.style.width = '100%'; // Show as complete
+                updateDataStats();
+                updatePreview();
             }
-            
-                         showLoading('bulk-loading', false);
-             updateDataStats();
-             updatePreview();
-             showStatus('success', `Bulk generation complete! Generated: ${generated} items with multi-server sources (VidSrc + VidJoy) matching existing app structure, Skipped: ${skipped}`);
         }
 
         async function generateByGenre() {
@@ -4909,139 +4811,48 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             const contentType = document.getElementById('content-type-select').value;
             const year = document.getElementById('year-select').value;
             
-            console.log('🎬 Starting genre generation:', { genreId, count, contentType, year });
-            console.log('📊 Current data structure:', currentData);
-            
-            // Show loading and progress
             showLoading('genre-loading', true);
-            document.getElementById('genre-progress').style.display = 'block';
-            document.getElementById('genre-progress-fill').style.width = '0%';
-            document.getElementById('genre-progress-text').textContent = 'Fetching content...';
+            const progressContainer = document.getElementById('genre-progress');
+            const progressBar = document.getElementById('genre-progress-fill');
+            const progressText = document.getElementById('genre-progress-text');
             
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Sending request...';
+
             try {
-                let totalGenerated = 0;
-                const contentTypes = contentType === 'both' ? ['movie', 'tv'] : [contentType];
-                
-                for (let i = 0; i < contentTypes.length; i++) {
-                    const type = contentTypes[i];
-                    const endpoint = type === 'movie' ? '/discover/movie' : '/discover/tv';
-                    
-                    // Calculate how many items we need for this content type
-                    const itemsNeeded = contentType === 'both' ? Math.ceil(count / 2) : count;
-                    console.log(`🎯 Need ${itemsNeeded} ${type} items`);
-                    
-                    // Fetch multiple pages if needed to get enough results
-                    let allResults = [];
-                    let currentPage = 1;
-                    const maxPages = Math.ceil(itemsNeeded / 20); // TMDB returns 20 items per page
-                    
-                    while (allResults.length < itemsNeeded && currentPage <= maxPages && currentPage <= 500) {
-                        // Build query parameters
-                        const params = {
-                            with_genres: genreId,
-                            sort_by: 'popularity.desc',
-                            page: currentPage
-                        };
-                        
-                        // Add year filter if specified
-                        if (year) {
-                            if (type === 'movie') {
-                                params.primary_release_year = year;
-                            } else {
-                                params.first_air_date_year = year;
-                            }
-                        }
-                        
-                        console.log(`🔍 Fetching ${type} data from:`, endpoint, params, `(page ${currentPage})`);
-                        const results = await fetchTMDB(endpoint, params);
-                        console.log(`📥 Received ${type} results from page ${currentPage}:`, results?.results?.length || 0, 'items');
-                        
-                        if (!results?.results || results.results.length === 0) {
-                            console.log(`📄 No more results on page ${currentPage}, stopping pagination`);
-                            break;
-                        }
-                        
-                        allResults = [...allResults, ...results.results];
-                        currentPage++;
-                        
-                        // Small delay between page requests to be nice to the API
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                    
-                    if (allResults.length === 0) {
-                        console.error(`❌ Failed to fetch ${type} data`);
-                        showStatus('error', `Failed to fetch ${type} data from TMDB`);
-                        continue;
-                    }
-                    
-                    // Take only the number of items we need
-                    const itemsToProcess = allResults.slice(0, itemsNeeded);
-                    console.log(`🎯 Processing ${itemsToProcess.length} ${type} items:`, itemsToProcess.map(item => item.title || item.name));
-                    let generated = 0;
-                    
-                    for (let j = 0; j < itemsToProcess.length; j++) {
-                        const item = itemsToProcess[j];
-                        const totalItemsToProcess = contentTypes.reduce((acc, _, idx) => {
-                            return acc + (contentType === 'both' ? Math.ceil(count / 2) : count);
-                        }, 0);
-                        const currentItemIndex = i * (contentType === 'both' ? Math.ceil(count / 2) : count) + j + 1;
-                        const progressPercent = (currentItemIndex / totalItemsToProcess) * 100;
-                        
-                        // Update progress
-                        document.getElementById('genre-progress-fill').style.width = `${progressPercent}%`;
-                        document.getElementById('genre-progress-text').textContent = 
-                            `Processing ${type === 'movie' ? 'movies' : 'TV series'}: ${j + 1}/${itemsToProcess.length}`;
-                        
-                        try {
-                            // Check for duplicate by title instead of ID
-                            const itemTitle = item.title || item.name;
-                            if (!isDuplicateByTitle(itemTitle, type)) {
-                                if (type === 'movie') {
-                                    await generateMovie(item.id);
-                                } else {
-                                    await generateSeries(item.id);
-                                }
-                                generated++;
-                                totalGenerated++;
-                                console.log(`✅ Generated ${type}: ${itemTitle}`);
-                            } else {
-                                console.log(`⚠️ Skipped duplicate ${type}: ${itemTitle}`);
-                            }
-                        } catch (error) {
-                            console.error(`❌ Error generating ${type} ${item.id}:`, error);
-                        }
-                        
-                        // Small delay to prevent rate limiting
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
+                const response = await fetch('api/bulk_handler.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'genre-based',
+                        genreId: genreId,
+                        count: count,
+                        contentType: contentType,
+                        year: year
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    progressText.textContent = 'Complete!';
+                    progressBar.style.width = '100%';
+                    showStatus('success', `Generated ${result.generated} items from genre.`);
+                } else {
+                    progressText.textContent = 'Failed!';
+                    showStatus('error', `Genre generation failed: ${result.message}`);
                 }
-                
-                // Complete progress
-                document.getElementById('genre-progress-fill').style.width = '100%';
-                document.getElementById('genre-progress-text').textContent = 'Complete!';
-                
-                console.log('🎉 Genre generation complete! Total generated:', totalGenerated);
-                console.log('📊 Final data structure:', currentData);
-                console.log('🎬 Movies count:', currentData.Categories.find(c => c.MainCategory === 'Movies')?.Entries.length || 0);
-                console.log('📺 TV Series count:', currentData.Categories.find(c => c.MainCategory === 'TV Series')?.Entries.length || 0);
-                
+            } catch (error) {
+                progressText.textContent = 'Error!';
+                showStatus('error', `A network error occurred: ${error.message}`);
+            } finally {
+                showLoading('genre-loading', false);
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                }, 3000);
                 updateDataStats();
                 updatePreview();
-                
-                const typeText = contentType === 'both' ? 'movies and TV series' : 
-                                contentType === 'movie' ? 'movies' : 'TV series';
-                const yearText = year ? ` from ${year}` : '';
-                showStatus('success', `Generated ${totalGenerated} ${typeText} from selected genre${yearText}!`);
-                
-            } catch (error) {
-                console.error('Genre generation failed:', error);
-                showStatus('error', 'Genre generation failed: ' + error.message);
-            } finally {
-                // Hide loading and progress after a delay
-                setTimeout(() => {
-                    showLoading('genre-loading', false);
-                    document.getElementById('genre-progress').style.display = 'none';
-                }, 2000);
             }
         }
 
@@ -5089,529 +4900,57 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         }
 
         // Data management functions
-        let importCancelled = false;
-        let importStartTime = 0;
-        
-        function importData() {
+        async function importData(chunked = false) {
             const fileInput = document.getElementById('import-file');
             const file = fileInput.files[0];
-            
+
             if (!file) {
                 showStatus('warning', 'Please select a file to import');
                 return;
             }
-            
-            // Reset cancellation flag
-            importCancelled = false;
-            importStartTime = Date.now();
-            
-            // Show progress section and loading
-            document.getElementById('import-progress-section').style.display = 'block';
-            document.getElementById('cancel-import-btn').style.display = 'inline-block';
-            showLoading('import-loading', true);
-            
-            // Update initial progress
-            updateImportProgress(0, 0, 'Reading file...', '-');
-            
-            const reader = new FileReader();
-            
-            reader.onprogress = function(e) {
-                if (e.lengthComputable && !importCancelled) {
-                    const percentLoaded = Math.round((e.loaded / e.total) * 30); // File reading is 30% of total
-                    updateImportProgress(percentLoaded, 0, `Reading file... ${Math.round(e.loaded / 1024 / 1024 * 10) / 10}MB / ${Math.round(e.total / 1024 / 1024 * 10) / 10}MB`, 'Loading file');
-                }
-            };
-            
-            reader.onload = function(e) {
-                if (importCancelled) return;
-                
-                try {
-                    updateImportProgress(30, 0, 'Parsing JSON data...', 'Validating');
-                    
-                    const jsonText = e.target.result;
-                    console.log('📄 File loaded, size:', (jsonText.length / 1024 / 1024).toFixed(1), 'MB');
-                    
-                    const importedData = JSON.parse(jsonText);
-                    console.log('✅ JSON parsed successfully');
-                    
-                    // Validate data structure for Categories format
-                    if (!importedData.Categories || !Array.isArray(importedData.Categories)) {
-                        console.error('❌ Invalid data structure:', {
-                            hasCategories: !!importedData.Categories,
-                            categoriesType: typeof importedData.Categories,
-                            isArray: Array.isArray(importedData.Categories),
-                            keys: Object.keys(importedData).slice(0, 10)
-                        });
-                        throw new Error(`Invalid data format - expected Categories array. Found: ${typeof importedData.Categories}`);
-                    }
-                    
-                    updateImportProgress(40, 0, 'Validating data structure...', 'Validating');
-                    console.log('📊 Found', importedData.Categories.length, 'categories');
-                    
-                    // Count total entries for progress tracking
-                    let totalEntries = 0;
-                    importedData.Categories.forEach((category, index) => {
-                        if (!category.MainCategory || !Array.isArray(category.SubCategories) || !Array.isArray(category.Entries)) {
-                            console.error(`❌ Invalid category structure at index ${index}:`, {
-                                mainCategory: category.MainCategory,
-                                hasSubCategories: !!category.SubCategories,
-                                subCategoriesType: typeof category.SubCategories,
-                                hasEntries: !!category.Entries,
-                                entriesType: typeof category.Entries
-                            });
-                            throw new Error(`Invalid category structure at index ${index}: ${category.MainCategory || 'Unknown'}`);
-                        }
-                        totalEntries += category.Entries.length;
-                        console.log(`📂 Category "${category.MainCategory}": ${category.Entries.length} entries`);
-                    });
-                    
-                    updateImportProgress(50, 0, `Found ${totalEntries.toLocaleString()} entries in ${importedData.Categories.length} categories`, 'Processing');
-                    console.log('🎯 Total entries to process:', totalEntries);
-                    
-                    // Process data with progress tracking
-                    processImportData(importedData, totalEntries);
-                    
-                } catch (error) {
-                    console.error('💥 Import error:', error);
-                    hideImportProgress();
-                    
-                    let errorMessage = error.message;
-                    if (error instanceof SyntaxError) {
-                        errorMessage = `JSON Syntax Error: ${error.message}. Check the console for details.`;
-                    }
-                    
-                    showStatus('error', `Import failed: ${errorMessage}`);
-                    showLoading('import-loading', false);
-                }
-            };
-            
-            reader.onerror = function() {
-                hideImportProgress();
-                showStatus('error', 'Failed to read file');
-                showLoading('import-loading', false);
-            };
-            
-            reader.readAsText(file);
-        }
-        
-        async function processImportData(importedData, totalEntries) {
-            let processedEntries = 0;
-            const batchSize = 100; // Process in batches to avoid blocking UI
-            const startTime = Date.now();
-            
-            // Update total count
-            document.getElementById('import-total').textContent = totalEntries.toLocaleString();
-            
+
+            const loadingEl = chunked ? 'import-chunked-loading' : 'import-loading';
+            showLoading(loadingEl, true);
+            showStatus('info', 'Uploading file to server for processing...');
+
+            const formData = new FormData();
+            formData.append('importFile', file);
+            formData.append('chunked', chunked);
+
             try {
-                for (let catIndex = 0; catIndex < importedData.Categories.length; catIndex++) {
-                    if (importCancelled) {
-                        showStatus('warning', 'Import cancelled by user');
-                        return;
-                    }
-                    
-                    const category = importedData.Categories[catIndex];
-                    updateImportProgress(
-                        50 + Math.round((processedEntries / totalEntries) * 50),
-                        processedEntries,
-                        `Processing ${category.MainCategory}...`,
-                        category.MainCategory
-                    );
-                    
-                    // Process entries in batches
-                    for (let i = 0; i < category.Entries.length; i += batchSize) {
-                        if (importCancelled) {
-                            showStatus('warning', 'Import cancelled by user');
-                            return;
-                        }
-                        
-                        const batch = category.Entries.slice(i, Math.min(i + batchSize, category.Entries.length));
-                        
-                        // Process batch (simulate processing time for large datasets)
-                        await new Promise(resolve => {
-                            setTimeout(() => {
-                                processedEntries += batch.length;
-                                
-                                // Update progress
-                                const progressPercent = 50 + Math.round((processedEntries / totalEntries) * 50);
-                                const elapsed = Date.now() - startTime;
-                                const speed = processedEntries / (elapsed / 1000);
-                                const remaining = totalEntries - processedEntries;
-                                const eta = remaining > 0 ? Math.round(remaining / speed) : 0;
-                                
-                                updateImportProgress(
-                                    progressPercent,
-                                    processedEntries,
-                                    `Processing ${category.MainCategory}... (${processedEntries.toLocaleString()}/${totalEntries.toLocaleString()})`,
-                                    category.MainCategory,
-                                    speed,
-                                    eta
-                                );
-                                
-                                resolve();
-                            }, 1); // Small delay to keep UI responsive
-                        });
-                    }
-                }
-                
-                                 if (!importCancelled) {
-                     try {
-                         // Finalize import
-                         updateImportProgress(95, processedEntries, 'Finalizing import...', 'Saving');
-                         console.log('💾 Starting finalization process...');
-                         
-                         // Step 1: Assign data
-                         console.log('📝 Assigning imported data...');
-                         currentData = importedData;
-                         console.log('✅ Data assigned successfully');
-                         
-                         // Step 2: Save to localStorage (this might fail with large data)
-                         updateImportProgress(96, processedEntries, 'Saving to localStorage...', 'Saving');
-                         console.log('💾 Saving to localStorage...');
-                         
-                         try {
-                             saveData();
-                             console.log('✅ Data saved to localStorage successfully');
-                         } catch (saveError) {
-                             console.error('⚠️ localStorage save failed:', saveError);
-                             console.log('📊 Data size:', JSON.stringify(currentData).length, 'characters');
-                             
-                             // Try to save without localStorage for now
-                             console.log('⚡ Continuing without localStorage save...');
-                             showStatus('warning', 'Data imported but could not save to localStorage (data too large). Data is active in current session.');
-                         }
-                         
-                         updateImportProgress(98, processedEntries, 'Updating interface...', 'UI Update');
-                         
-                         // Step 3: Update UI components
-                         console.log('🔄 Updating UI components...');
-                         
-                         try {
-                             console.log('📊 Updating data stats...');
-                             updateDataStats();
-                             console.log('✅ Data stats updated');
-                         } catch (statsError) {
-                             console.error('⚠️ Data stats update failed:', statsError);
-                         }
-                         
-                         try {
-                             console.log('👁️ Updating preview...');
-                             updatePreview();
-                             console.log('✅ Preview updated');
-                         } catch (previewError) {
-                             console.error('⚠️ Preview update failed:', previewError);
-                         }
-                         
-                                                 try {
-                            console.log('📋 Refreshing content checkboxes...');
-                            refreshContentCheckboxes();
-                            console.log('✅ Content checkboxes refreshed');
-                        } catch (dropdownError) {
-                            console.error('⚠️ Checkbox refresh failed:', dropdownError);
-                        }
-                         
-                         updateImportProgress(100, processedEntries, 'Import completed successfully!', 'Complete');
-                         console.log('✨ Import process completed successfully!');
-                         
-                         // Hide progress after a short delay
-                         setTimeout(() => {
-                             hideImportProgress();
-                             showStatus('success', `Successfully imported ${processedEntries.toLocaleString()} entries from ${importedData.Categories.length} categories!`);
-                         }, 2000);
-                         
-                     } catch (finalizationError) {
-                         console.error('💥 Finalization error:', finalizationError);
-                         hideImportProgress();
-                         showStatus('error', `Import data processed but finalization failed: ${finalizationError.message}. Check console for details.`);
-                     }
-                 }
-                
-            } catch (error) {
-                hideImportProgress();
-                showStatus('error', `Import processing failed: ${error.message}`);
-            }
-            
-            showLoading('import-loading', false);
-        }
-        
-        function updateImportProgress(percent, processed, message, category, speed = 0, eta = 0) {
-            // Update progress bar
-            document.getElementById('import-progress-fill').style.width = `${percent}%`;
-            
-            // Update progress text
-            document.getElementById('import-progress-text').textContent = `${percent}% - ${message}`;
-            
-            // Update stats
-            document.getElementById('import-processed').textContent = processed.toLocaleString();
-            document.getElementById('import-current-category').textContent = category;
-            
-            if (speed > 0) {
-                document.getElementById('import-speed').textContent = Math.round(speed);
-                
-                if (eta > 0) {
-                    const minutes = Math.floor(eta / 60);
-                    const seconds = eta % 60;
-                    document.getElementById('import-eta').textContent = 
-                        minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+                const response = await fetch('api/import_handler.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus('success', `Import successful! Added: ${result.added}, Updated: ${result.updated}, Skipped: ${result.skipped}`);
                 } else {
-                    document.getElementById('import-eta').textContent = 'Almost done!';
+                    showStatus('error', `Import failed: ${result.message}`);
                 }
+            } catch (error) {
+                showStatus('error', `An error occurred during import: ${error.message}`);
+            } finally {
+                showLoading(loadingEl, false);
+                updateDataStats();
+                updatePreview();
             }
         }
-        function cancelImport() {
-            importCancelled = true;
-            hideImportProgress();
-            showLoading('import-loading', false);
-            showStatus('warning', 'Import cancelled');
-        }
-        function hideImportProgress() {
-            document.getElementById('import-progress-section').style.display = 'none';
-            document.getElementById('cancel-import-btn').style.display = 'none';
-        }
-        
-        // Chunked Import - Alternative approach for large files
+
         function importDataChunked() {
-            const fileInput = document.getElementById('import-file');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showStatus('warning', 'Please select a file to import');
-                return;
-            }
-            
-            // Reset cancellation flag
-            importCancelled = false;
-            importStartTime = Date.now();
-            
-            // Show progress section and loading
-            document.getElementById('import-progress-section').style.display = 'block';
-            document.getElementById('cancel-import-btn').style.display = 'inline-block';
-            showLoading('import-chunked-loading', true);
-            
-            // Update initial progress
-            updateImportProgress(0, 0, 'Reading file for chunked processing...', 'Loading');
-            
-            const reader = new FileReader();
-            
-            reader.onprogress = function(e) {
-                if (e.lengthComputable && !importCancelled) {
-                    const percentLoaded = Math.round((e.loaded / e.total) * 20); // File reading is 20% of total
-                    updateImportProgress(percentLoaded, 0, `Reading file... ${Math.round(e.loaded / 1024 / 1024 * 10) / 10}MB / ${Math.round(e.total / 1024 / 1024 * 10) / 10}MB`, 'Loading file');
-                }
-            };
-            
-            reader.onload = function(e) {
-                if (importCancelled) return;
-                
-                try {
-                    updateImportProgress(20, 0, 'Parsing JSON data...', 'Parsing');
-                    
-                    const jsonText = e.target.result;
-                    console.log('📄 File loaded for chunked processing, size:', (jsonText.length / 1024 / 1024).toFixed(1), 'MB');
-                    
-                    const importedData = JSON.parse(jsonText);
-                    console.log('✅ JSON parsed successfully for chunked import');
-                    
-                    // Validate data structure
-                    if (!importedData.Categories || !Array.isArray(importedData.Categories)) {
-                        throw new Error(`Invalid data format - expected Categories array. Found: ${typeof importedData.Categories}`);
-                    }
-                    
-                    updateImportProgress(30, 0, 'Preparing chunked processing...', 'Preparing');
-                    
-                    // Process with chunked approach
-                    processImportDataChunked(importedData);
-                    
-                } catch (error) {
-                    console.error('💥 Chunked import error:', error);
-                    hideImportProgress();
-                    showStatus('error', `Chunked import failed: ${error.message}`);
-                    showLoading('import-chunked-loading', false);
-                }
-            };
-            
-            reader.onerror = function() {
-                hideImportProgress();
-                showStatus('error', 'Failed to read file');
-                showLoading('import-chunked-loading', false);
-            };
-            
-            reader.readAsText(file);
+            importData(true);
         }
         
-        async function processImportDataChunked(importedData) {
-            console.log('🔄 Starting chunked processing...');
-            
-            try {
-                // Count total entries
-                let totalEntries = 0;
-                importedData.Categories.forEach(category => {
-                    totalEntries += category.Entries.length;
-                });
-                
-                console.log(`📊 Total entries to process: ${totalEntries.toLocaleString()}`);
-                document.getElementById('import-total').textContent = totalEntries.toLocaleString();
-                
-                updateImportProgress(35, 0, `Processing ${totalEntries.toLocaleString()} entries in chunks...`, 'Processing');
-                
-                // Initialize empty structure
-                const newData = {
-                    Categories: importedData.Categories.map(cat => ({
-                        MainCategory: cat.MainCategory,
-                        SubCategories: [...cat.SubCategories],
-                        Entries: []
-                    }))
-                };
-                
-                let processedEntries = 0;
-                const chunkSize = 50; // Much smaller chunks to prevent crashes
-                const startTime = Date.now();
-                
-                // Process each category
-                for (let catIndex = 0; catIndex < importedData.Categories.length; catIndex++) {
-                    if (importCancelled) {
-                        showStatus('warning', 'Chunked import cancelled by user');
-                        return;
-                    }
-                    
-                    const category = importedData.Categories[catIndex];
-                    const targetCategory = newData.Categories[catIndex];
-                    
-                    console.log(`📂 Processing category: ${category.MainCategory} (${category.Entries.length} entries)`);
-                    
-                    // Process entries in very small chunks
-                    for (let i = 0; i < category.Entries.length; i += chunkSize) {
-                        if (importCancelled) {
-                            showStatus('warning', 'Chunked import cancelled by user');
-                            return;
-                        }
-                        
-                        const chunk = category.Entries.slice(i, Math.min(i + chunkSize, category.Entries.length));
-                        
-                        // Process chunk with longer delay to prevent crashes
-                        await new Promise(resolve => {
-                            setTimeout(() => {
-                                // Add entries to target category
-                                targetCategory.Entries.push(...chunk);
-                                processedEntries += chunk.length;
-                                
-                                // Update progress
-                                const progressPercent = 35 + Math.round((processedEntries / totalEntries) * 60); // 35-95%
-                                const elapsed = Date.now() - startTime;
-                                const speed = processedEntries / (elapsed / 1000);
-                                const remaining = totalEntries - processedEntries;
-                                const eta = remaining > 0 ? Math.round(remaining / speed) : 0;
-                                
-                                updateImportProgress(
-                                    progressPercent,
-                                    processedEntries,
-                                    `Processing ${category.MainCategory}... (Chunk ${Math.ceil((i + chunkSize) / chunkSize)}/${Math.ceil(category.Entries.length / chunkSize)})`,
-                                    category.MainCategory,
-                                    speed,
-                                    eta
-                                );
-                                
-                                console.log(`✅ Processed chunk: ${processedEntries}/${totalEntries} entries`);
-                                resolve();
-                            }, 10); // Longer delay to prevent crashes
-                        });
-                        
-                        // Additional safety: Force garbage collection hint
-                        if (processedEntries % 200 === 0) {
-                            await new Promise(resolve => setTimeout(resolve, 50));
-                        }
-                    }
-                }
-                
-                if (!importCancelled) {
-                    console.log('🎯 All entries processed, finalizing...');
-                    await finalizeChunkedImport(newData, processedEntries);
-                }
-                
-            } catch (error) {
-                console.error('💥 Chunked processing error:', error);
-                hideImportProgress();
-                showStatus('error', `Chunked processing failed: ${error.message}`);
-            }
-            
-            showLoading('import-chunked-loading', false);
+        function cancelImport() {
+            // Since the process is now server-side, we can't truly cancel it from the client.
+            // This function can be left for future implementations if needed (e.g., with WebSockets).
+            showStatus('warning', 'Server-side import cannot be cancelled from the client.');
         }
-        
-        async function finalizeChunkedImport(newData, processedEntries) {
-            try {
-                updateImportProgress(95, processedEntries, 'Finalizing chunked import...', 'Finalizing');
-                console.log('💾 Starting chunked import finalization...');
-                
-                // Assign data
-                currentData = newData;
-                console.log('✅ Data assigned successfully');
-                
-                // Try to save (might fail due to size)
-                updateImportProgress(96, processedEntries, 'Attempting to save...', 'Saving');
-                try {
-                    saveData();
-                    console.log('✅ Data saved to localStorage');
-                } catch (saveError) {
-                    console.warn('⚠️ Could not save to localStorage:', saveError.message);
-                    showStatus('warning', 'Data imported successfully but too large for browser storage. Will work in current session only.');
-                }
-                
-                // Update UI components safely
-                updateImportProgress(98, processedEntries, 'Updating interface...', 'UI Update');
-                
-                await new Promise(resolve => {
-                    setTimeout(() => {
-                        try {
-                            updateDataStats();
-                            console.log('✅ Data stats updated');
-                        } catch (e) {
-                            console.warn('⚠️ Data stats update failed:', e);
-                        }
-                        resolve();
-                    }, 100);
-                });
-                
-                await new Promise(resolve => {
-                    setTimeout(() => {
-                        try {
-                            // Skip preview update for large datasets to prevent crashes
-                            if (processedEntries < 5000) {
-                                updatePreview();
-                                console.log('✅ Preview updated');
-                            } else {
-                                console.log('⚠️ Skipping preview update (dataset too large)');
-                            }
-                        } catch (e) {
-                            console.warn('⚠️ Preview update failed:', e);
-                        }
-                        resolve();
-                    }, 100);
-                });
-                
-                await new Promise(resolve => {
-                    setTimeout(() => {
-                        try {
-                            refreshContentCheckboxes();
-                            console.log('✅ Content checkboxes refreshed');
-                        } catch (e) {
-                            console.warn('⚠️ Checkbox refresh failed:', e);
-                        }
-                        resolve();
-                    }, 100);
-                });
-                
-                updateImportProgress(100, processedEntries, 'Chunked import completed!', 'Complete');
-                console.log('🎉 Chunked import completed successfully!');
-                
-                setTimeout(() => {
-                    hideImportProgress();
-                    showStatus('success', `🚀 Successfully imported ${processedEntries.toLocaleString()} entries using chunked processing! Data is ready to use.`);
-                }, 2000);
-                
-            } catch (error) {
-                console.error('💥 Chunked finalization error:', error);
-                hideImportProgress();
-                showStatus('error', `Chunked import processed data but finalization failed: ${error.message}`);
-            }
+
+        function hideImportProgress() {
+            // This function is no longer needed as the progress is handled by status messages.
         }
 
                                  function exportData() {
@@ -5854,60 +5193,51 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         }
 
         async function clearAllData() {
-            if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
-                currentData = {
-                    Categories: [
-                        {
-                            MainCategory: "Live TV",
-                            SubCategories: ["Entertainment"],
-                            Entries: []
-                        },
-                        {
-                            MainCategory: "Movies", 
-                            SubCategories: ["Action", "Comedy", "Drama", "Horror", "Sci-Fi"],
-                            Entries: []
-                        },
-                        {
-                            MainCategory: "TV Series",
-                            SubCategories: ["Anime", "Action", "Comedy", "Drama"],
-                            Entries: []
-                        }
-                    ]
-                };
-                
-                await saveData();
-                updateDataStats();
-                updatePreview();
-                showStatus('success', 'All data cleared!');
+            if (confirm('Are you sure you want to clear all data from the database? This cannot be undone.')) {
+                showStatus('info', 'Sending request to clear all data...');
+                try {
+                    const response = await fetch('api/data_management_handler.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'action=clear_all'
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showStatus('success', result.message);
+                    } else {
+                        showStatus('error', `Error: ${result.message}`);
+                    }
+                } catch (error) {
+                    showStatus('error', `A network error occurred: ${error.message}`);
+                } finally {
+                    updateDataStats();
+                    updatePreview();
+                }
             }
         }
 
         async function removeDuplicates() {
-            let originalCount = 0;
-            let removedCount = 0;
-            
-            // Remove duplicates from each category
-            currentData.Categories.forEach(category => {
-                originalCount += category.Entries.length;
-                
-                const seen = new Set();
-                const originalEntries = [...category.Entries];
-                category.Entries = category.Entries.filter(entry => {
-                    const key = `${entry.Title}-${entry.Year || 'Unknown'}`;
-                    if (seen.has(key)) {
-                        return false;
+            if (confirm('Are you sure you want to remove duplicate entries from the database?')) {
+                showStatus('info', 'Sending request to remove duplicates...');
+                try {
+                    const response = await fetch('api/data_management_handler.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'action=remove_duplicates'
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        showStatus('success', result.message);
+                    } else {
+                        showStatus('error', `Error: ${result.message}`);
                     }
-                    seen.add(key);
-                    return true;
-                });
-                
-                removedCount += originalEntries.length - category.Entries.length;
-            });
-            
-            await saveData();
-            updateDataStats();
-            updatePreview();
-            showStatus('success', `Removed ${removedCount} duplicate items!`);
+                } catch (error) {
+                    showStatus('error', `A network error occurred: ${error.message}`);
+                } finally {
+                    updateDataStats();
+                    updatePreview();
+                }
+            }
         }
 
         // Storage management functions
@@ -6560,53 +5890,21 @@ Proceed with removal?`;
         }
 
         // Utility functions
-        function updateDataStats() {
-            let movieCount = 0;
-            let seriesCount = 0;
-            let channelCount = 0;
-            
-            // Count entries in each category
-            currentData.Categories.forEach(category => {
-                if (category.MainCategory === "Movies") {
-                    movieCount += category.Entries.length;
-                } else if (category.MainCategory === "TV Series") {
-                    seriesCount += category.Entries.length;
-                } else if (category.MainCategory === "Live TV") {
-                    channelCount += category.Entries.length;
+        async function updateDataStats() {
+            try {
+                const response = await fetch('api/data_management_handler.php?action=get_stats');
+                const stats = await response.json();
+
+                if (stats.success) {
+                    document.getElementById('movie-count').textContent = stats.movie_count;
+                    document.getElementById('series-count').textContent = stats.series_count;
+                    document.getElementById('channel-count').textContent = stats.channel_count;
+                    document.getElementById('total-count').textContent = stats.total_count;
+                } else {
+                    console.error('Failed to fetch stats:', stats.message);
                 }
-            });
-            
-            // Calculate data size
-            const dataString = JSON.stringify(currentData);
-            const dataSizeKB = (dataString.length / 1024).toFixed(1);
-            const dataSizeMB = (dataString.length / 1024 / 1024).toFixed(2);
-            const displaySize = dataSizeKB > 1024 ? `${dataSizeMB} MB` : `${dataSizeKB} KB`;
-            
-            // Update display
-            if (document.getElementById('movie-count')) {
-                document.getElementById('movie-count').textContent = movieCount;
-                document.getElementById('series-count').textContent = seriesCount;
-                document.getElementById('channel-count').textContent = channelCount;
-                document.getElementById('total-count').textContent = movieCount + seriesCount + channelCount;
-                
-                // Update storage info
-                if (document.getElementById('storage-type')) {
-                    document.getElementById('storage-type').textContent = useIndexedDB ? 'IndexedDB' : 'localStorage';
-                    document.getElementById('data-size').textContent = displaySize;
-                    
-                    const isCompressed = localStorage.getItem('playlist-data-compressed') === 'true';
-                    document.getElementById('compression-status').textContent = isCompressed ? 'Enabled' : 'None';
-                    
-                    // Update storage info styling based on size
-                    const storageInfo = document.getElementById('storage-info');
-                    if (dataSizeKB > 5120) { // > 5MB
-                        storageInfo.className = 'status warning';
-                    } else if (dataSizeKB > 10240) { // > 10MB
-                        storageInfo.className = 'status error';
-                    } else {
-                        storageInfo.className = 'status info';
-                    }
-                }
+            } catch (error) {
+                console.error('Error fetching data stats:', error);
             }
         }
 
