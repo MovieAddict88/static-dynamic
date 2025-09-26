@@ -1,21 +1,36 @@
 <?php
-// --- Database Configuration ---
-define('DB_HOST', 'sql_server_host'); // Replace with your SQL server host (e.g., sqlXXX.infinityfree.com)
-define('DB_USER', 'your_username');      // Replace with your database username
-define('DB_PASS', 'your_password');      // Replace with your database password
-define('DB_NAME', 'your_dbname');        // Replace with your database name
+// Database Configuration
+define('DB_HOST', 'YOUR_DATABASE_HOST'); // e.g., 'sql123.infinityfree.com'
+define('DB_NAME', 'YOUR_DATABASE_NAME'); // e.g., 'if0_12345678_cinecraze'
+define('DB_USER', 'YOUR_DATABASE_USER'); // e.g., 'if0_12345678'
+define('DB_PASS', 'YOUR_DATABASE_PASSWORD');
 
-// --- Site Configuration ---
-define('SITE_TITLE', 'CineCraze');
-define('BASE_URL', 'http://your_domain.com'); // Replace with your website's URL
+// TMDB API Key
+// You can get a free API key from https://www.themoviedb.org/
+define('TMDB_API_KEY', 'ec926176bf467b3f7735e3154238c161');
 
-// --- TMDB API Key ---
-// It's recommended to store this securely
-define('TMDB_API_KEY', 'ec926176bf467b3f7735e3154238c161'); // Replace with your TMDB API Key if you have a different one
+// Start the session
+// This is needed for admin authentication
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Error Reporting
+// Set to 0 for production environments
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Timezone
+date_default_timezone_set('UTC');
+
+// Check for PDO extension
+if (!extension_loaded('pdo_mysql')) {
+    die('<h1>Error: PHP PDO MySQL extension is not installed or enabled.</h1><p>The application requires the PDO MySQL extension to connect to the database. Please enable it in your PHP configuration.</p>');
+}
 
 /**
- * Function to establish a database connection.
- * @return PDO
+ * A simple helper function to connect to the database.
+ * Returns a PDO object.
  */
 function getDBConnection() {
     $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
@@ -27,14 +42,6 @@ function getDBConnection() {
     try {
         return new PDO($dsn, DB_USER, DB_PASS, $options);
     } catch (\PDOException $e) {
-        // In a production environment, you would log this error and show a generic message.
-        // For development, it's useful to see the error.
         throw new \PDOException($e->getMessage(), (int)$e->getCode());
     }
 }
-
-// Start a session for all pages that include this config
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
-}
-?>
