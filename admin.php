@@ -1,12 +1,4 @@
-<?php
-require_once '../config.php';
-
-// Check if user is logged in, otherwise redirect to login page
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
-?>
+      <?php require_once 'check_login.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1768,6 +1760,11 @@ jobs:
     </script>
 </head>
 <body>
+    <div style="background: #000; padding: 10px; text-align: right; border-bottom: 1px solid #e50914;">
+        Welcome, <b><?php echo htmlspecialchars($_SESSION["username"]); ?></b>.
+        <a href="change_password.php" style="color: #fff; margin-left: 15px;">Change Password</a>
+        <a href="logout.php" style="color: #fff; margin-left: 15px;">Logout</a>
+    </div>
     <div class="container">
         <header>
             <h1>📁 Playlist Categories Manager</h1>
@@ -2287,16 +2284,20 @@ jobs:
                 <div class="card">
                     <h2>📂 Import/Export</h2>
                     <div class="form-group">
-                        <label>Import JSON File to Database</label>
-                        <input type="file" id="import-json-file" accept=".json">
-                        <div style="margin-top: 10px;">
-                            <button class="btn btn-primary" onclick="importJsonToDb()">
-                                <span class="loading" id="import-db-loading" style="display: none;"></span>
-                                🚀 Import to Database
+                        <label>Import JSON File</label>
+                        <input type="file" id="import-file" accept=".json">
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                            <button class="btn btn-secondary" onclick="importData()">
+                                <span class="loading" id="import-loading" style="display: none;"></span>
+                                Standard Import
+                            </button>
+                            <button class="btn btn-primary" onclick="importDataChunked()">
+                                <span class="loading" id="import-chunked-loading" style="display: none;"></span>
+                                🚀 Chunked Import (Large Files)
                             </button>
                         </div>
                         <small style="color: var(--text-secondary); margin-top: 5px; display: block;">
-                            Import a JSON file containing an array of movies and series. This will add them to the central database.
+                            💡 Use "Chunked Import" for large files (>5MB) to prevent crashes
                         </small>
                     </div>
                     
@@ -2727,38 +2728,6 @@ jobs:
                 <div id="content-preview" class="preview-grid"></div>
             </div>
         </div>
-
-        <!-- Settings Tab -->
-        <div id="settings" class="tab-content">
-            <div class="card">
-                <h2>⚙️ Admin Settings</h2>
-                <div class="grid grid-2">
-                    <div class="form-group">
-                        <h3>Change Password</h3>
-                        <form id="change-password-form">
-                            <div class="form-group">
-                                <label for="current-password">Current Password</label>
-                                <input type="password" id="current-password" name="current_password" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="new-password">New Password</label>
-                                <input type="password" id="new-password" name="new_password" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="confirm-password">Confirm New Password</label>
-                                <input type="password" id="confirm-password" name="confirm_password" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Change Password</button>
-                        </form>
-                        <div id="password-change-status" style="margin-top: 15px;"></div>
-                    </div>
-                    <div class="form-group">
-                        <h3>Session</h3>
-                        <a href="logout.php" class="btn btn-danger">Logout</a>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Bottom Navigation Bar -->
@@ -2780,10 +2749,6 @@ jobs:
                 <div class="nav-icon">🗂️</div>
                 <div class="nav-label">Data</div>
             </div>
-            <div class="nav-item" onclick="switchTab('settings')" role="button" tabindex="0" aria-label="Settings">
-                <div class="nav-icon">⚙️</div>
-                <div class="nav-label">Settings</div>
-            </div>
         </div>
     </nav>
 
@@ -2797,36 +2762,6 @@ jobs:
         </div>
     </div>
     <script>
-        // --- Change Password ---
-        document.getElementById('change-password-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-
-            const statusDiv = document.getElementById('password-change-status');
-            statusDiv.className = 'status info';
-            statusDiv.textContent = 'Changing password...';
-            statusDiv.style.display = 'block';
-
-            const formData = new FormData(this);
-
-            fetch('change_password.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    statusDiv.className = 'status success';
-                    this.reset(); // Clear the form
-                } else {
-                    statusDiv.className = 'status error';
-                }
-                statusDiv.textContent = data.message;
-            })
-            .catch(error => {
-                statusDiv.className = 'status error';
-                statusDiv.textContent = 'An error occurred: ' + error.message;
-            });
-        });
         // Debounce function
         function debounce(func, delay) {
             let timeout;
@@ -3344,31 +3279,6 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             }
         }
 
-        // TMDB API functions
-        async function fetchTMDB(endpoint, params = {}) {
-            const url = new URL(`${TMDB_BASE_URL}${endpoint}`);
-            url.searchParams.append('api_key', getTMDBApiKey());
-            
-            Object.entries(params).forEach(([key, value]) => {
-                url.searchParams.append(key, value);
-            });
-
-            try {
-                const response = await fetch(url);
-                if (!response.ok) {
-                    // If rate limited or API key issue, try switching to backup
-                    if (response.status === 429 || response.status === 401) {
-                        return await retryWithBackupApi(endpoint, params);
-                    }
-                    throw new Error(`TMDB API error: ${response.status}`);
-                }
-                return await response.json();
-            } catch (error) {
-                console.error('TMDB fetch error:', error);
-                showStatus('error', `TMDB API Error: ${error.message}`);
-                return null;
-            }
-        }
         
         // Retry with backup API keys
         async function retryWithBackupApi(endpoint, params = {}) {
@@ -3764,7 +3674,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             });
         }
 
-        async function generateFromTMDB(type, tmdbId = null) {
+                 async function generateFromTMDB(type, tmdbId = null) {
             const id = tmdbId || document.getElementById(`${type}-tmdb-id`).value;
             if (!id) {
                 showStatus('warning', 'Please enter a TMDB ID');
@@ -3772,150 +3682,46 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             }
 
             showLoading(`${type}-loading`, true);
-            showStatus('info', `Sending request to server to generate ${type}...`);
+
+            const apiKey = getTMDBApiKey();
+            const servers = [];
+            const serverInputs = document.querySelectorAll(`#${type}-servers .server-item`);
+            serverInputs.forEach(item => {
+                const name = item.querySelector('.server-name').value.trim();
+                const url = item.querySelector('.server-url').value.trim();
+                if (name && url) {
+                    servers.push({ name, url });
+                }
+            });
 
             const formData = new FormData();
-            formData.append('action', `generate_${type}`);
+            formData.append('type', type);
             formData.append('tmdb_id', id);
-
-            if (type === 'movie') {
-                const serverInputs = document.querySelectorAll('#movie-servers .server-item');
-                const servers = Array.from(serverInputs).map(item => ({
-                    name: item.querySelector('.server-name').value.trim(),
-                    url: item.querySelector('.server-url').value.trim()
-                })).filter(s => s.name && s.url);
-                formData.append('servers', JSON.stringify(servers));
-            } else if (type === 'series') {
-                const seasonsInput = document.getElementById('series-seasons').value.trim();
-                formData.append('seasons', seasonsInput);
-
-                const serverInputs = document.querySelectorAll('#series-servers .server-item');
-                const servers = Array.from(serverInputs).map(item => ({
-                    name: item.querySelector('.server-name').value.trim(),
-                    urlTemplate: item.querySelector('.server-url').value.trim()
-                })).filter(s => s.name && s.urlTemplate);
-                formData.append('servers', JSON.stringify(servers));
-            }
+            formData.append('api_key', apiKey);
+            formData.append('servers', JSON.stringify(servers));
 
             try {
-                const response = await fetch('ajax_handler.php', {
+                const response = await fetch('api_generator.php', {
                     method: 'POST',
                     body: formData
                 });
+
                 const result = await response.json();
 
                 if (result.success) {
                     showStatus('success', result.message);
-                    updateDataStats(); // This will need to be updated to fetch from DB
-                    updatePreview();   // This will need to be updated to fetch from DB
+                    updateDataStats();
+                    updatePreview();
                 } else {
                     showStatus('error', result.message);
                 }
             } catch (error) {
-                showStatus('error', `An error occurred: ${error.message}`);
+                showStatus('error', 'An error occurred while communicating with the server.');
             } finally {
                 showLoading(`${type}-loading`, false);
             }
         }
 
-                 async function generateMovie(tmdbId) {
-             const movieData = await fetchTMDB(`/movie/${tmdbId}`);
-             const credits = await fetchTMDB(`/movie/${tmdbId}/credits`);
-             const videos = await fetchTMDB(`/movie/${tmdbId}/videos`);
-             const releaseDates = await fetchTMDB(`/movie/${tmdbId}/release_dates`);
-             
-             if (!movieData) throw new Error('Failed to fetch movie data');
-
-             // Get additional servers
-             const serverInputs = document.querySelectorAll('#movie-servers .server-item');
-             const additionalSources = [];
-             
-             serverInputs.forEach(item => {
-                 const name = item.querySelector('.server-name').value.trim();
-                 const url = item.querySelector('.server-url').value.trim();
-                 if (name && url) {
-                     additionalSources.push({
-                         id: nextId++,
-                         type: getSourceType(url),
-                         title: name,
-                         quality: "Auto",
-                         size: "Unknown",
-                         kind: getSourceKind(url),
-                         premium: "false",
-                         external: false,
-                         url: url
-                     });
-                 }
-             });
-
-                         // Auto-generate embed sources based on configuration
-            const autoSources = generateEmbedSources(tmdbId, 'movie');
-
-             console.log('Auto-generated movie sources:', autoSources);
-             console.log('Additional sources:', additionalSources);
-
-             const movie = {
-                 id: nextId++,
-                 title: movieData.title,
-                 type: "movie",
-                 label: movieData.genres[0]?.name || "Movie",
-                 sublabel: `Released ${movieData.release_date?.substring(0, 4) || 'Unknown'}`,
-                 imdb: movieData.vote_average?.toString() || "0",
-                 downloadas: `${movieData.title.toLowerCase().replace(/\s+/g, '-')}.mp4`,
-                 comment: true,
-                 playas: "video",
-                 description: movieData.overview || "No description available",
-                 parentalRating: getMovieCertification(releaseDates),
-                 year: movieData.release_date?.substring(0, 4) || "Unknown",
-                 duration: formatDuration(movieData.runtime),
-                 rating: movieData.vote_average || 0,
-                 image: movieData.poster_path ? `${TMDB_IMAGE_BASE}${movieData.poster_path}` : null,
-                 cover: movieData.backdrop_path ? `${TMDB_IMAGE_BASE}${movieData.backdrop_path}` : null,
-                 genres: movieData.genres?.map(g => ({ id: g.id, title: g.name })) || [],
-                 sources: [...autoSources, ...additionalSources],
-                 trailer: getTrailer(videos),
-                 actors: getActors(credits),
-                 subtitles: await getSubtitles(tmdbId, 'movie'),
-                 views: Math.floor(Math.random() * 10000) + 1000,
-                 created_at: new Date().toISOString().split('T')[0]
-             };
-
-             console.log('Generated movie with sources:', movie.sources);
-
-            // Convert to Categories structure
-            const movieEntry = {
-                Title: movie.title,
-                SubCategory: movie.genres?.[0]?.title || "Action",
-                Country: "",
-                Description: movie.description,
-                Poster: movie.image,
-                Thumbnail: movie.image,
-                Rating: Math.round(movie.rating),
-                Duration: movie.duration,
-                Year: parseInt(movie.year),
-                 parentalRating: movie.parentalRating,
-                Servers: movie.sources.map(source => ({
-                    name: source.name || source.title,
-                    url: source.url
-                }))
-            };
-
-            // Add to Movies category
-            const moviesCategory = currentData.Categories.find(cat => cat.MainCategory === "Movies");
-            if (moviesCategory) {
-                // Add genre to subcategories if not exists
-                const genre = movie.genres?.[0]?.title || "Action";
-                if (!moviesCategory.SubCategories.includes(genre)) {
-                    moviesCategory.SubCategories.push(genre);
-                }
-                moviesCategory.Entries.push(movieEntry);
-                console.log(`✅ Movie '${movieEntry.Title}' added to Movies category with ${movieEntry.Servers.length} servers`);
-            } else {
-                console.error('❌ Movies category not found!');
-            }
-            
-            await saveData();
-        }
 
         // Missing Content Detection and Auto-Generation
         async function detectAndGenerateMissingContent() {
@@ -4285,156 +4091,6 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             return element;
         }
 
-        async function generateSeries(tmdbId) {
-            const seriesData = await fetchTMDB(`/tv/${tmdbId}`);
-            const credits = await fetchTMDB(`/tv/${tmdbId}/credits`);
-            const videos = await fetchTMDB(`/tv/${tmdbId}/videos`);
-            const contentRatings = await fetchTMDB(`/tv/${tmdbId}/content_ratings`);
-            
-            if (!seriesData) throw new Error('Failed to fetch series data');
-
-            // Get seasons to include
-            const seasonsInput = document.getElementById('series-seasons').value.trim();
-            const seasonsToInclude = seasonsInput ? 
-                seasonsInput.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s)) :
-                seriesData.seasons?.map(s => s.season_number).filter(s => s > 0) || [];
-
-            // Get additional servers
-            const serverInputs = document.querySelectorAll('#series-servers .server-item');
-            const additionalServerTemplates = [];
-            
-            serverInputs.forEach(item => {
-                const name = item.querySelector('.server-name').value.trim();
-                const urlTemplate = item.querySelector('.server-url').value.trim();
-                if (name && urlTemplate) {
-                    additionalServerTemplates.push({ name, urlTemplate });
-                }
-            });
-
-            const seasons = [];
-            
-            for (const seasonNum of seasonsToInclude) {
-                const seasonData = await fetchTMDB(`/tv/${tmdbId}/season/${seasonNum}`);
-                if (!seasonData) continue;
-
-                const episodes = [];
-                
-                                 for (const episodeData of seasonData.episodes || []) {
-                     // Auto-generate embed sources based on configuration for each episode
-                     const episodeSources = generateEmbedSources(tmdbId, 'tv', seasonNum, episodeData.episode_number);
-
-                     console.log(`Auto-generated sources for S${seasonNum}E${episodeData.episode_number}:`, episodeSources);
-
-                    // Add additional sources
-                    additionalServerTemplates.forEach(server => {
-                        const url = server.urlTemplate
-                            .replace('{season}', seasonNum)
-                            .replace('{episode}', episodeData.episode_number);
-                        
-                        episodeSources.push({
-                            id: nextId++,
-                            type: getSourceType(url),
-                            title: server.name,
-                            quality: "Auto",
-                            size: "Unknown",
-                            kind: getSourceKind(url),
-                            premium: "false",
-                            external: false,
-                            url: url
-                        });
-                    });
-
-                    episodes.push({
-                        id: nextId++,
-                        episode_number: episodeData.episode_number,
-                        title: episodeData.name || `Episode ${episodeData.episode_number}`,
-                        description: episodeData.overview || "No description available",
-                        downloadas: `${seriesData.name.toLowerCase().replace(/\s+/g, '-')}-s${seasonNum}e${episodeData.episode_number}.mp4`,
-                        playas: "video",
-                        duration: formatDuration(episodeData.runtime),
-                        image: episodeData.still_path ? `${TMDB_IMAGE_BASE}${episodeData.still_path}` : null,
-                        sources: episodeSources
-                    });
-                }
-
-                seasons.push({
-                    id: seasonNum,
-                    title: seasonData.name || `Season ${seasonNum}`,
-                    episodes: episodes
-                });
-            }
-
-            const series = {
-                id: nextId++,
-                title: seriesData.name,
-                type: "series",
-                label: seriesData.genres[0]?.name || "Series",
-                sublabel: `${seasons.length} Season${seasons.length !== 1 ? 's' : ''}`,
-                imdb: seriesData.vote_average?.toString() || "0",
-                downloadas: seriesData.name.toLowerCase().replace(/\s+/g, '-'),
-                comment: true,
-                playas: "video",
-                description: seriesData.overview || "No description available",
-                 parentalRating: getTVCertification(contentRatings),
-                year: seriesData.first_air_date?.substring(0, 4) || "Unknown",
-                duration: formatDuration(seriesData.episode_run_time?.[0]),
-                rating: seriesData.vote_average || 0,
-                image: seriesData.poster_path ? `${TMDB_IMAGE_BASE}${seriesData.poster_path}` : null,
-                cover: seriesData.backdrop_path ? `${TMDB_IMAGE_BASE}${seriesData.backdrop_path}` : null,
-                genres: seriesData.genres?.map(g => ({ id: g.id, title: g.name })) || [],
-                sources: [], // Series don't have direct sources
-                trailer: getTrailer(videos),
-                actors: getActors(credits),
-                subtitles: [],
-                seasons: seasons,
-                views: Math.floor(Math.random() * 10000) + 1000,
-                created_at: new Date().toISOString().split('T')[0]
-            };
-
-            // Convert to Categories structure
-            const seriesEntry = {
-                Title: series.title,
-                SubCategory: series.genres?.[0]?.title || "Action",
-                Country: "",
-                Description: series.description,
-                Poster: series.image,
-                Thumbnail: series.image,
-                Rating: Math.round(series.rating),
-                Year: parseInt(series.year),
-                 parentalRating: series.parentalRating,
-                Seasons: seasons.map(season => ({
-                    Season: season.id,
-                    SeasonPoster: series.image,
-                    Episodes: season.episodes.map(episode => ({
-                        Episode: episode.episode_number,
-                        Title: episode.title,
-                        Duration: episode.duration || "00:45:00",
-                        Description: episode.description || "",
-                        Thumbnail: episode.image || series.image,
-                        Servers: episode.sources?.map(source => ({
-                            name: source.name || source.title,
-                            url: source.url
-                        })) || []
-                    }))
-                }))
-            };
-
-            // Add to TV Series category
-            const seriesCategory = currentData.Categories.find(cat => cat.MainCategory === "TV Series");
-            if (seriesCategory) {
-                // Add genre to subcategories if not exists
-                const genre = series.genres?.[0]?.title || "Action";
-                if (!seriesCategory.SubCategories.includes(genre)) {
-                    seriesCategory.SubCategories.push(genre);
-                }
-                seriesCategory.Entries.push(seriesEntry);
-                console.log(`✅ Series '${seriesEntry.Title}' added to TV Series category with ${seriesEntry.Seasons.length} seasons`);
-            } else {
-                console.error('❌ TV Series category not found!');
-            }
-            
-            await saveData();
-        }
 
         // Helper functions
         function getSourceType(url) {
@@ -4723,120 +4379,77 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         async function addManualContent() {
             const type = document.getElementById('manual-type').value;
             const title = document.getElementById('manual-title').value.trim();
-            const subcategory = document.getElementById('manual-subcategory').value;
-            const country = document.getElementById('manual-country').value.trim();
-            const parentalRating = document.getElementById('manual-parental-rating').value.trim();
-
             if (!title) {
                 showStatus('warning', 'Please enter a title');
                 return;
             }
 
-            // Get servers
-            const sourceInputs = document.querySelectorAll('#manual-sources .server-item');
-            const servers = [];
+            const formData = new FormData();
+            formData.append('type', type);
+            formData.append('title', title);
+            formData.append('subcategory', document.getElementById('manual-subcategory').value);
+            formData.append('country', document.getElementById('manual-country').value.trim());
+            formData.append('parental_rating', document.getElementById('manual-parental-rating').value.trim());
+            formData.append('description', document.getElementById('manual-description').value);
+            formData.append('poster', document.getElementById('manual-image').value);
+            formData.append('year', document.getElementById('manual-year').value);
+            formData.append('rating', document.getElementById('manual-rating').value);
 
+            const servers = [];
+            const sourceInputs = document.querySelectorAll('#manual-sources .server-item');
             sourceInputs.forEach(item => {
                 const name = item.querySelector('.source-name').value.trim();
                 const url = item.querySelector('.source-url').value.trim();
-
                 if (name && url) {
-                    servers.push({
-                        name: name,
-                        url: url
-                    });
+                    servers.push({ name, url });
                 }
             });
+            formData.append('servers', JSON.stringify(servers));
 
-            if (servers.length === 0) {
-                showStatus('warning', 'Please add at least one server');
-                return;
-            }
-
-            // Create entry object matching JSON structure
-            const entry = {
-                Title: title,
-                SubCategory: subcategory,
-                Country: country,
-                Description: document.getElementById('manual-description').value || 'No description available',
-                Poster: document.getElementById('manual-image').value || '',
-                Thumbnail: document.getElementById('manual-image').value || '',
-                Rating: parseInt(document.getElementById('manual-rating').value) || 0,
-                parentalRating: parentalRating,
-                Servers: servers
-            };
-
-            // Add additional fields based on type
-            if (type === 'movie' || type === 'series') {
-                entry.Year = parseInt(document.getElementById('manual-year').value) || new Date().getFullYear();
-            }
-
-            if (type === 'movie') {
-                entry.Duration = "2:00:00"; // Default duration
-            }
-
-            if (type === 'series') {
-                entry.Seasons = []; // Will be populated when seasons are added
-            }
-
-            // Find the appropriate category and add the entry
-            let mainCategory = '';
-            if (type === 'movie') mainCategory = 'Movies';
-            else if (type === 'series') mainCategory = 'TV Series';
-            else if (type === 'live') mainCategory = 'Live TV';
-
-            const category = currentData.Categories.find(cat => cat.MainCategory === mainCategory);
-            if (category) {
-                // Add subcategory if it doesn't exist
-                if (!category.SubCategories.includes(subcategory)) {
-                    category.SubCategories.push(subcategory);
-                }
-
-                category.Entries.push(entry);
-            } else {
-                // Create new category if it doesn't exist
-                currentData.Categories.push({
-                    MainCategory: mainCategory,
-                    SubCategories: [subcategory],
-                    Entries: [entry]
+            try {
+                const response = await fetch('manual_add.php', {
+                    method: 'POST',
+                    body: formData
                 });
+                const result = await response.json();
+                if (result.success) {
+                    showStatus('success', result.message);
+                    // Clear form
+                    document.getElementById('manual-title').value = '';
+                    document.getElementById('manual-description').value = '';
+                    document.getElementById('manual-image').value = '';
+                    document.getElementById('manual-year').value = '';
+                    document.getElementById('manual-rating').value = '';
+                    document.getElementById('manual-country').value = '';
+                    document.getElementById('manual-parental-rating').value = '';
+                    document.getElementById('manual-sources').innerHTML = `
+                        <div class="server-item">
+                            <input type="text" placeholder="Source Name" class="source-name">
+                            <input type="url" placeholder="Video URL" class="source-url">
+                            <select class="source-type">
+                                <option value="video">Direct Video</option>
+                                <option value="embed">Embedded</option>
+                                <option value="youtube">YouTube</option>
+                                <option value="live">Live Stream</option>
+                            </select>
+                            <select class="source-quality">
+                                <option value="1080p">1080p</option>
+                                <option value="720p">720p</option>
+                                <option value="480p">480p</option>
+                                <option value="Auto">Auto</option>
+                            </select>
+                            <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
+                            <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
+                        </div>
+                    `;
+                    updateDataStats();
+                    updatePreview();
+                } else {
+                    showStatus('error', result.message);
+                }
+            } catch (error) {
+                showStatus('error', 'An error occurred while communicating with the server.');
             }
-
-            await saveData();
-            updateDataStats();
-            updatePreview();
-            showStatus('success', `${title} added to ${mainCategory} successfully!`);
-
-            // Clear form
-            document.getElementById('manual-title').value = '';
-            document.getElementById('manual-description').value = '';
-            document.getElementById('manual-image').value = '';
-            document.getElementById('manual-year').value = '';
-            document.getElementById('manual-rating').value = '';
-            document.getElementById('manual-country').value = '';
-            document.getElementById('manual-parental-rating').value = '';
-
-            // Reset sources to one empty item
-            document.getElementById('manual-sources').innerHTML = `
-                <div class="server-item">
-                    <input type="text" placeholder="Source Name" class="source-name">
-                    <input type="url" placeholder="Video URL" class="source-url">
-                    <select class="source-type">
-                        <option value="video">Direct Video</option>
-                        <option value="embed">Embedded</option>
-                        <option value="youtube">YouTube</option>
-                        <option value="live">Live Stream</option>
-                    </select>
-                    <select class="source-quality">
-                        <option value="1080p">1080p</option>
-                        <option value="720p">720p</option>
-                        <option value="480p">480p</option>
-                        <option value="Auto">Auto</option>
-                    </select>
-                    <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
-                    <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
-                </div>
-            `;
         }
 
         // Bulk operations
@@ -5088,7 +4701,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         let importCancelled = false;
         let importStartTime = 0;
 
-        function importData() {
+        async function importData() {
             const fileInput = document.getElementById('import-file');
             const file = fileInput.files[0];
 
@@ -5097,97 +4710,30 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                 return;
             }
 
-            // Reset cancellation flag
-            importCancelled = false;
-            importStartTime = Date.now();
+            const formData = new FormData();
+            formData.append('jsonFile', file);
 
-            // Show progress section and loading
-            document.getElementById('import-progress-section').style.display = 'block';
-            document.getElementById('cancel-import-btn').style.display = 'inline-block';
             showLoading('import-loading', true);
 
-            // Update initial progress
-            updateImportProgress(0, 0, 'Reading file...', '-');
+            try {
+                const response = await fetch('import.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
 
-            const reader = new FileReader();
-
-            reader.onprogress = function(e) {
-                if (e.lengthComputable && !importCancelled) {
-                    const percentLoaded = Math.round((e.loaded / e.total) * 30); // File reading is 30% of total
-                    updateImportProgress(percentLoaded, 0, `Reading file... ${Math.round(e.loaded / 1024 / 1024 * 10) / 10}MB / ${Math.round(e.total / 1024 / 1024 * 10) / 10}MB`, 'Loading file');
+                if (result.success) {
+                    showStatus('success', result.message);
+                    updateDataStats();
+                    updatePreview();
+                } else {
+                    showStatus('error', result.message);
                 }
-            };
-
-            reader.onload = function(e) {
-                if (importCancelled) return;
-
-                try {
-                    updateImportProgress(30, 0, 'Parsing JSON data...', 'Validating');
-
-                    const jsonText = e.target.result;
-                    console.log('📄 File loaded, size:', (jsonText.length / 1024 / 1024).toFixed(1), 'MB');
-
-                    const importedData = JSON.parse(jsonText);
-                    console.log('✅ JSON parsed successfully');
-
-                    // Validate data structure for Categories format
-                    if (!importedData.Categories || !Array.isArray(importedData.Categories)) {
-                        console.error('❌ Invalid data structure:', {
-                            hasCategories: !!importedData.Categories,
-                            categoriesType: typeof importedData.Categories,
-                            isArray: Array.isArray(importedData.Categories),
-                            keys: Object.keys(importedData).slice(0, 10)
-                        });
-                        throw new Error(`Invalid data format - expected Categories array. Found: ${typeof importedData.Categories}`);
-                    }
-
-                    updateImportProgress(40, 0, 'Validating data structure...', 'Validating');
-                    console.log('📊 Found', importedData.Categories.length, 'categories');
-
-                    // Count total entries for progress tracking
-                    let totalEntries = 0;
-                    importedData.Categories.forEach((category, index) => {
-                        if (!category.MainCategory || !Array.isArray(category.SubCategories) || !Array.isArray(category.Entries)) {
-                            console.error(`❌ Invalid category structure at index ${index}:`, {
-                                mainCategory: category.MainCategory,
-                                hasSubCategories: !!category.SubCategories,
-                                subCategoriesType: typeof category.SubCategories,
-                                hasEntries: !!category.Entries,
-                                entriesType: typeof category.Entries
-                            });
-                            throw new Error(`Invalid category structure at index ${index}: ${category.MainCategory || 'Unknown'}`);
-                        }
-                        totalEntries += category.Entries.length;
-                        console.log(`📂 Category "${category.MainCategory}": ${category.Entries.length} entries`);
-                    });
-
-                    updateImportProgress(50, 0, `Found ${totalEntries.toLocaleString()} entries in ${importedData.Categories.length} categories`, 'Processing');
-                    console.log('🎯 Total entries to process:', totalEntries);
-
-                    // Process data with progress tracking
-                    processImportData(importedData, totalEntries);
-
-                } catch (error) {
-                    console.error('💥 Import error:', error);
-                    hideImportProgress();
-
-                    let errorMessage = error.message;
-                    if (error instanceof SyntaxError) {
-                        errorMessage = `JSON Syntax Error: ${error.message}. Check the console for details.`;
-                    }
-
-                    showStatus('error', `Import failed: ${errorMessage}`);
-                    showLoading('import-loading', false);
-                }
-            };
-
-            reader.onerror = function() {
-                hideImportProgress();
-                showStatus('error', 'Failed to read file');
+            } catch (error) {
+                showStatus('error', 'An error occurred while communicating with the server.');
+            } finally {
                 showLoading('import-loading', false);
-            };
-
-            reader.readAsText(file);
+            }
         }
         
         async function processImportData(importedData, totalEntries) {
@@ -5610,69 +5156,8 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             }
         }
 
-                                 function exportData() {
-            try {
-                // Export the Categories structure directly
-                const dataStr = JSON.stringify(currentData, null, 2);
-                const dataSizeMB = (dataStr.length / 1024 / 1024).toFixed(2);
-
-                console.log(`📤 Exporting ${dataSizeMB}MB of data`);
-                
-                // For large data, use chunked download approach
-                if (dataStr.length > 50 * 1024 * 1024) { // > 50MB
-                    showStatus('info', `Preparing large export (${dataSizeMB}MB)...`);
-                    exportLargeData(dataStr);
-                    return;
-                }
-                
-                // Standard export for smaller data
-                const dataBlob = new Blob([dataStr], { type: 'application/json' });
-                
-                // Check if blob was created successfully
-                if (!dataBlob || dataBlob.size === 0) {
-                    throw new Error('Failed to create export file blob');
-                }
-                
-                const link = document.createElement('a');
-                const url = URL.createObjectURL(dataBlob);
-                
-                if (!url) {
-                    throw new Error('Failed to create download URL');
-                }
-                
-                link.href = url;
-                link.download = `playlist-${new Date().toISOString().split('T')[0]}.json`;
-                
-                // Add link to document temporarily to ensure it works
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                
-                // Clean up the object URL after download
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 1000);
-                
-                showStatus('success', `Data exported successfully! File size: ${dataSizeMB}MB`);
-                
-            } catch (error) {
-                console.error('Export error:', error);
-                showStatus('error', `Export failed: ${error.message}`);
-                
-                // Fallback: try to copy to clipboard for large data
-                if (error.message.includes('large') || error.message.includes('blob')) {
-                    try {
-                        const dataStr = JSON.stringify(currentData, null, 2);
-                        navigator.clipboard.writeText(dataStr).then(() => {
-                            showStatus('warning', 'Export failed, but data copied to clipboard. Paste into a text file and save as .json');
-                        }).catch(() => {
-                            showStatus('error', 'Export failed and clipboard unavailable. Try using GitHub upload instead.');
-                        });
-                    } catch (clipboardError) {
-                        showStatus('error', 'Export failed. Try using GitHub upload for large datasets.');
-                    }
-                }
-            }
+        function exportData() {
+            window.location.href = 'export.php';
         }
         
         // Handle large data exports with chunked approach
@@ -6041,133 +5526,153 @@ Proceed with removal?`;
             }
         }
 
-        async function updatePreview(page = 1) {
-            currentPage = page;
+        // Preview and management functions
+        async function updatePreview() {
             const filter = document.getElementById('preview-filter')?.value || 'all';
-            const searchTerm = document.getElementById('preview-search')?.value || '';
+            const searchTerm = document.getElementById('preview-search')?.value.toLowerCase() || '';
             const container = document.getElementById('content-preview');
-            const paginationControls = document.getElementById('pagination-controls');
             
             if (!container) return;
 
-            container.innerHTML = '<div class="loading"></div>'; // Show loading spinner
+            const response = await fetch(`get_content.php?type=${filter}&search=${searchTerm}&page=${currentPage}`);
+            const data = await response.json();
 
-            const formData = new FormData();
-            formData.append('action', 'get_content');
-            formData.append('page', currentPage);
-            formData.append('limit', itemsPerPage);
-            formData.append('filter', filter);
-            formData.append('search', searchTerm);
+            if (data.success) {
+                container.innerHTML = '';
+                const fragment = document.createDocumentFragment();
 
-            try {
-                const response = await fetch('ajax_handler.php', {
-                    method: 'POST',
-                    body: formData
+                data.content.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'preview-item';
+
+                    div.innerHTML = `
+                        <img src="${item.poster || 'https://via.placeholder.com/300x450?text=No+Image'}"
+                             alt="${item.title}" loading="lazy">
+                        <div class="info">
+                            <div class="title">${item.title}</div>
+                            <div class="meta">${item.year || 'Unknown'} • ${item.parental_rating || 'N/A'} • ${item.type?.toUpperCase()} • Rating: ${item.rating || 'N/A'}</div>
+                            <div class="meta">Genre: ${item.genre_name || 'N/A'}</div>
+                            <div style="margin-top: 10px;">
+                                <button class="btn btn-secondary btn-small" onclick="editContent(${item.id})">Edit</button>
+                                <button class="btn btn-danger btn-small" onclick="deleteContent(${item.id}, '${item.title}')">Delete</button>
+                            </div>
+                        </div>
+                    `;
+
+                    fragment.appendChild(div);
                 });
-                const result = await response.json();
 
-                container.innerHTML = ''; // Clear loading spinner
+                container.appendChild(fragment);
 
-                if (result.success && result.data) {
-                    const itemsToRender = result.data;
-                    const pagination = result.pagination;
-
-                    if (itemsToRender.length === 0) {
-                        container.innerHTML = '<p>No content found.</p>';
-                    } else {
-                        const fragment = document.createDocumentFragment();
-                        itemsToRender.forEach(item => {
-                            const div = document.createElement('div');
-                            div.className = 'preview-item';
-
-                            const posterUrl = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : 'https://via.placeholder.com/300x450?text=No+Image';
-
-                            div.innerHTML = `
-                                <img src="${posterUrl}" alt="${item.title}" loading="lazy">
-                                <div class="info">
-                                    <div class="title">${item.title}</div>
-                                    <div class="meta">${item.year || 'Unknown'} • ${item.parental_rating || 'N/A'} • ${item.type?.toUpperCase()}</div>
-                                    <div class="meta">DB ID: ${item.id} • TMDB ID: ${item.tmdb_id || 'N/A'}</div>
-                                    <div style="margin-top: 10px;">
-                                        <button class="btn btn-secondary btn-small" onclick="editContent(${item.id})">Edit</button>
-                                        <button class="btn btn-danger btn-small" onclick="deleteContent(${item.id})">Delete</button>
-                                    </div>
-                                </div>
-                            `;
-                            fragment.appendChild(div);
-                        });
-                        container.appendChild(fragment);
-                    }
-
-                    // Update pagination controls
-                    const pageInfo = document.getElementById('page-info');
-                    const prevBtn = document.getElementById('prev-page');
-                    const nextBtn = document.getElementById('next-page');
-
-                    pageInfo.textContent = `Page ${pagination.currentPage} of ${pagination.totalPages || 1}`;
-                    prevBtn.disabled = pagination.currentPage <= 1;
-                    nextBtn.disabled = pagination.currentPage >= pagination.totalPages;
-
-                    // Update onclick handlers
-                    prevBtn.onclick = () => changePage(pagination.currentPage - 1);
-                    nextBtn.onclick = () => changePage(pagination.currentPage + 1);
-
-                    paginationControls.style.display = pagination.totalPages > 1 ? 'block' : 'none';
-                    updateDataStats(pagination.totalResults);
-
-                } else {
-                    container.innerHTML = `<div class="status error">Failed to load content: ${result.message || 'Unknown error'}</div>`;
-                }
-            } catch(error) {
-                container.innerHTML = `<div class="status error">An error occurred: ${error.message}</div>`;
+                // Update pagination controls
+                const { page, total_pages } = data.pagination;
+                currentPage = page;
+                document.getElementById('page-info').textContent = `Page ${page} of ${total_pages || 1}`;
+                document.getElementById('prev-page').disabled = page === 1;
+                document.getElementById('next-page').disabled = page === total_pages || total_pages === 0;
+            } else {
+                showStatus('error', data.message);
             }
         }
 
-        function editContent(id) {
-            // This function will need to be updated to fetch full content details
-            // via AJAX before populating the edit modal.
-            showStatus('info', `Edit functionality for item ID ${id} is not yet implemented.`);
+        async function editContent(id) {
+            const response = await fetch(`get_content_details.php?id=${id}`);
+            const data = await response.json();
+
+            if (data.success) {
+                const content = data.content;
+                const modal = document.getElementById('edit-modal');
+                if (!modal) {
+                    // Create modal if it doesn't exist
+                    const modalHTML = `
+                        <div id="edit-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close" onclick="closeEditModal()">&times;</span>
+                                <h2>Edit Content</h2>
+                                <div id="edit-form"></div>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <button class="btn btn-primary" onclick="saveEdit(${id}, '${content.type}')">Save Changes</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.body.insertAdjacentHTML('beforeend', modalHTML);
+                }
+
+                const form = document.getElementById('edit-form');
+                let serversHTML = '';
+                if (content.type !== 'series') {
+                    content.servers.forEach(server => {
+                        serversHTML += `
+                            <div class="server-item">
+                                <input type="text" placeholder="Server Name" class="edit-server-name" value="${server.name || ''}">
+                                <input type="url" placeholder="Video URL" class="edit-server-url" value="${server.url || ''}">
+                                <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
+                            </div>
+                        `;
+                    });
+                }
+
+                let seasonsHTML = '';
+                if (content.type === 'series') {
+                    content.seasons.forEach((season, seasonIndex) => {
+                        seasonsHTML += `<div class="season-group"><h4>Season ${season.season_number}</h4>`;
+                        season.episodes.forEach((episode, episodeIndex) => {
+                            seasonsHTML += `<div class="episode-group" data-episode-id="${episode.id}"><h5>Episode ${episode.episode_number}: ${episode.title}</h5><div class="episode-servers">`;
+                            // Here you would fetch servers for each episode and display them
+                            seasonsHTML += `</div><button class="btn btn-secondary btn-small" onclick="addEpisodeServerField(this, ${episode.id})">+ Add Server</button></div>`;
+                        });
+                        seasonsHTML += `</div>`;
+                    });
+                }
+
+                form.innerHTML = `
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="edit-title" value="${content.title}">
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="edit-description" rows="4">${content.description || ''}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Poster URL</label>
+                        <input type="text" id="edit-poster" value="${content.poster || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Year</label>
+                        <input type="text" id="edit-year" value="${content.year || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Rating</label>
+                        <input type="number" id="edit-rating" min="0" max="10" step="0.1" value="${content.rating || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Parental Rating</label>
+                        <input type="text" id="edit-parental-rating" value="${content.parental_rating || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Country</label>
+                        <input type="text" id="edit-country" value="${content.country || ''}">
+                    </div>
+                    ${content.type !== 'series' ? `
+                    <div class="form-group">
+                        <label>Servers</label>
+                        <div id="edit-servers" class="server-list">
+                            ${serversHTML}
+                        </div>
+                        <button class="btn btn-secondary btn-small" onclick="addEditServer()">+ Add Server</button>
+                    </div>` : ''}
+                    ${seasonsHTML}
+                `;
+                document.getElementById('edit-modal').style.display = 'block';
+            } else {
+                showStatus('error', data.message);
+            }
         }
 
         function closeEditModal() {
             document.getElementById('edit-modal').style.display = 'none';
-        }
-
-        async function importJsonToDb() {
-            const fileInput = document.getElementById('import-json-file');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showStatus('warning', 'Please select a JSON file to import.');
-                return;
-            }
-
-            showLoading('import-db-loading', true);
-            showStatus('info', 'Uploading and processing JSON file...');
-
-            const formData = new FormData();
-            formData.append('action', 'import_json');
-            formData.append('jsonFile', file);
-
-            try {
-                const response = await fetch('ajax_handler.php', {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await response.json();
-
-                if (result.success) {
-                    showStatus('success', result.message);
-                    updatePreview(); // Refresh the data management view
-                } else {
-                    showStatus('error', `Import failed: ${result.message}`);
-                }
-            } catch (error) {
-                showStatus('error', `An error occurred during import: ${error.message}`);
-            } finally {
-                showLoading('import-db-loading', false);
-                fileInput.value = ''; // Clear file input
-            }
         }
 
         function addEditServer() {
@@ -6177,99 +5682,99 @@ Proceed with removal?`;
             serverItem.innerHTML = `
                 <input type="text" placeholder="Server Name" class="edit-server-name">
                 <input type="url" placeholder="Video URL" class="edit-server-url">
-                <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
                 <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
             `;
             container.appendChild(serverItem);
         }
 
-        function addEpisodeServer(seasonIndex, episodeIndex) {
-            const episodeGroup = document.querySelector(`[data-season="${seasonIndex}"][data-episode="${episodeIndex}"]`).closest('.episode-group');
-            const serversContainer = episodeGroup.querySelector('.episode-servers');
-            
+        function addEpisodeServerField(button, episodeId) {
+            const container = button.previousElementSibling;
             const serverItem = document.createElement('div');
             serverItem.className = 'server-item';
             serverItem.innerHTML = `
-                <input type="text" placeholder="Server Name" class="edit-episode-server-name" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                <input type="url" placeholder="Video URL" class="edit-episode-server-url" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
+                <input type="text" placeholder="Server Name" class="edit-episode-server-name" data-episode-id="${episodeId}">
+                <input type="url" placeholder="Video URL" class="edit-episode-server-url" data-episode-id="${episodeId}">
                 <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
             `;
-            serversContainer.appendChild(serverItem);
+            container.appendChild(serverItem);
         }
 
-        async function saveEdit() {
-            const originalTitle = document.getElementById('edit-original-title').value;
-            const category = document.getElementById('edit-category').value;
-            const newTitle = document.getElementById('edit-title').value;
-            const description = document.getElementById('edit-description').value;
-            const year = document.getElementById('edit-year').value;
-            const rating = parseInt(document.getElementById('edit-rating').value);
-            const parentalRating = document.getElementById('edit-parental-rating').value;
-            
-            // Find and update content
-            currentData.Categories.forEach(cat => {
-                if (cat.MainCategory === category) {
-                    const entry = cat.Entries.find(e => e.Title === originalTitle);
-                    if (entry) {
-                        entry.Title = newTitle;
-                        entry.Description = description;
-                        if (year) entry.Year = parseInt(year);
-                        entry.Rating = rating;
-                        entry.parentalRating = parentalRating;
-                        
-                        // Update servers
-                        const serverInputs = document.querySelectorAll('#edit-servers .server-item');
-                        const servers = [];
-                        serverInputs.forEach(item => {
-                            const name = item.querySelector('.edit-server-name').value.trim();
-                            const url = item.querySelector('.edit-server-url').value.trim();
+        async function saveEdit(id, type) {
+            const formData = new FormData();
+            formData.append('id', id);
+            formData.append('title', document.getElementById('edit-title').value);
+            formData.append('description', document.getElementById('edit-description').value);
+            formData.append('poster', document.getElementById('edit-poster').value);
+            formData.append('year', document.getElementById('edit-year').value);
+            formData.append('rating', document.getElementById('edit-rating').value);
+            formData.append('parental_rating', document.getElementById('edit-parental-rating').value);
+            formData.append('country', document.getElementById('edit-country').value);
+
+            if (type !== 'series') {
+                const servers = [];
+                const serverInputs = document.querySelectorAll('#edit-servers .server-item');
+                serverInputs.forEach(item => {
+                    const name = item.querySelector('.edit-server-name').value.trim();
+                    const url = item.querySelector('.edit-server-url').value.trim();
+                    if (name && url) {
+                        servers.push({ name, url });
+                    }
+                });
+                formData.append('servers', JSON.stringify(servers));
+            } else {
+                const seasons = [];
+                document.querySelectorAll('.season-group').forEach(seasonEl => {
+                    const seasonData = { episodes: [] };
+                    seasonEl.querySelectorAll('.episode-group').forEach(episodeEl => {
+                        const episodeId = episodeEl.dataset.episodeId;
+                        const episodeServers = [];
+                        episodeEl.querySelectorAll('.server-item').forEach(serverEl => {
+                            const name = serverEl.querySelector('.edit-episode-server-name').value.trim();
+                            const url = serverEl.querySelector('.edit-episode-server-url').value.trim();
                             if (name && url) {
-                                servers.push({ name, url });
+                                episodeServers.push({ name, url });
                             }
                         });
-                        entry.Servers = dedupeServers([...(entry.Servers || []), ...servers]);
-                        
-                        // Update episode servers for TV Series
-                        if (entry.Seasons) {
-                            entry.Seasons.forEach((season, seasonIndex) => {
-                                season.Episodes.forEach((episode, episodeIndex) => {
-                                    const episodeServers = [];
-                                    const episodeServerInputs = document.querySelectorAll(`.edit-episode-server-name[data-season="${seasonIndex}"][data-episode="${episodeIndex}"]`);
-                                    
-                                    episodeServerInputs.forEach(input => {
-                                        const serverItem = input.closest('.server-item');
-                                        const name = input.value.trim();
-                                        const url = serverItem.querySelector('.edit-episode-server-url').value.trim();
-                                        if (name && url) {
-                                            episodeServers.push({ name, url });
-                                        }
-                                    });
-                                    
-                                    episode.Servers = dedupeServers([...(episode.Servers || []), ...episodeServers]);
-                                });
-                            });
-                        }
-                    }
-                }
+                        seasonData.episodes.push({ id: episodeId, servers: episodeServers });
+                    });
+                    seasons.push(seasonData);
+                });
+                formData.append('seasons', JSON.stringify(seasons));
+            }
+
+            const response = await fetch('edit_content.php', {
+                method: 'POST',
+                body: formData
             });
-            
-            try {
-                await saveData();
-                updatePreview();
+
+            const result = await response.json();
+            if (result.success) {
+                showStatus('success', result.message);
                 closeEditModal();
-                showStatus('success', 'Content updated successfully with server changes!');
-            } catch (error) {
-                console.error('Save failed:', error);
-                showStatus('error', 'Failed to save changes: ' + error.message + '. Your changes are preserved in memory but not saved to storage.');
-                // Keep the modal open so user can try again or export data
+                updatePreview();
+            } else {
+                showStatus('error', result.message);
             }
         }
 
-        function deleteContent(id) {
-            // This function will need to be updated to send a delete request
-            // via AJAX.
-            showStatus('info', `Delete functionality for item ID ${id} is not yet implemented.`);
+        async function deleteContent(id, title) {
+            if (confirm(`Are you sure you want to delete "${title}"?`)) {
+                const formData = new FormData();
+                formData.append('id', id);
+
+                const response = await fetch('delete_content.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showStatus('success', result.message);
+                    updatePreview();
+                } else {
+                    showStatus('error', result.message);
+                }
+            }
         }
 
         function addServerToContent(title, category) {

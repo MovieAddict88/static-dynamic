@@ -1,164 +1,146 @@
 <?php
-// Simple installer for CineCraze
-// This script will create the necessary database tables.
+// Simple Installer for CineCraze
 
-// --- IMPORTANT ---
-// 1. CREATE A DATABASE in your hosting panel (e.g., cPanel, InfinityFree Vistapanel).
-// 2. CREATE A DATABASE USER and assign it to the database with ALL PRIVILEGES.
-// 3. UPDATE the config.php file with your database host, name, username, and password.
-// 4. UPLOAD all files to your server.
-// 5. NAVIGATE to this install.php file in your browser to run the installer.
-// 6. DELETE this file after installation is complete for security.
+// --- Configuration ---
+$db_config_file = 'config.php';
+$db_schema_file = 'schema.sql';
+$default_admin_user = 'admin';
 
-// Include the configuration file
-require_once 'config.php';
+// --- Helper Functions ---
 
-// --- Installation Logic ---
-$message = "";
-
-try {
-    // Create a new PDO connection
-    $conn = new PDO("mysql:host=" . DB_HOST, DB_USER, DB_PASS);
-    // Set the PDO error mode to exception
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    // --- Step 1: Create Database if it doesn't exist ---
-    $conn->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $message .= "<p>✅ Database '" . DB_NAME . "' checked/created successfully.</p>";
-
-    // --- Step 2: Select the database ---
-    $conn->exec("USE `" . DB_NAME . "`");
-    $message .= "<p>✅ Selected database '" . DB_NAME . "'.</p>";
-
-    // --- Step 3: Create Tables ---
-    $sql_commands = [
-        "CREATE TABLE IF NOT EXISTS `users` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `username` VARCHAR(50) NOT NULL UNIQUE,
-            `password` VARCHAR(255) NOT NULL,
-            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `content` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `tmdb_id` INT NULL,
-            `type` ENUM('movie', 'series', 'live') NOT NULL,
-            `title` VARCHAR(255) NOT NULL,
-            `description` TEXT,
-            `poster_path` VARCHAR(255),
-            `backdrop_path` VARCHAR(255),
-            `release_date` DATE,
-            `year` YEAR,
-            `runtime` INT,
-            `rating` DECIMAL(3,1),
-            `parental_rating` VARCHAR(20),
-            `genres` TEXT,
-            `trailer_url` VARCHAR(255),
-            `country` VARCHAR(100),
-            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY `tmdb_id_type_unique` (`tmdb_id`, `type`),
-            INDEX `type_idx` (`type`),
-            INDEX `year_idx` (`year`),
-            INDEX `rating_idx` (`rating`),
-            FULLTEXT KEY `title_search_idx` (`title`)
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `seasons` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `content_id` INT NOT NULL,
-            `season_number` INT NOT NULL,
-            `name` VARCHAR(255),
-            `poster_path` VARCHAR(255),
-            INDEX `content_id_idx` (`content_id`),
-            FOREIGN KEY (`content_id`) REFERENCES `content`(`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `episodes` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `season_id` INT NOT NULL,
-            `episode_number` INT NOT NULL,
-            `title` VARCHAR(255),
-            `description` TEXT,
-            `still_path` VARCHAR(255),
-            `release_date` DATE,
-            INDEX `season_id_idx` (`season_id`),
-            FOREIGN KEY (`season_id`) REFERENCES `seasons`(`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB;",
-
-        "CREATE TABLE IF NOT EXISTS `servers` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `content_id` INT NULL,
-            `episode_id` INT NULL,
-            `name` VARCHAR(255) NOT NULL,
-            `url` TEXT NOT NULL,
-            `quality` VARCHAR(20),
-            INDEX `content_id_idx` (`content_id`),
-            INDEX `episode_id_idx` (`episode_id`),
-            FOREIGN KEY (`content_id`) REFERENCES `content`(`id`) ON DELETE CASCADE,
-            FOREIGN KEY (`episode_id`) REFERENCES `episodes`(`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB;"
-    ];
-
-    foreach ($sql_commands as $command) {
-        $conn->exec($command);
-    }
-    $message .= "<p>✅ All tables created successfully.</p>";
-
-    // --- Step 4: Add Default Admin User ---
-    // Check if admin user already exists
-    $stmt = $conn->prepare("SELECT id FROM users WHERE username = 'admin'");
-    $stmt->execute();
-
-    if ($stmt->rowCount() == 0) {
-        $admin_user = 'admin';
-        // IMPORTANT: Use a more secure password in a real application
-        $admin_pass = password_hash('admin123', PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("INSERT INTO users (username, password) VALUES (:username, :password)");
-        $stmt->bindParam(':username', $admin_user);
-        $stmt->bindParam(':password', $admin_pass);
-        $stmt->execute();
-        $message .= "<p>✅ Default admin user created.</p>";
-        $message .= "<p><strong>Username:</strong> admin</p>";
-        $message .= "<p><strong>Password:</strong> admin123</p>";
-    } else {
-        $message .= "<p>ℹ️ Admin user already exists. Skipping creation.</p>";
-    }
-
-    $message .= "<h2>🎉 Installation Complete!</h2>";
-    $message .= "<p style='color:red; font-weight:bold;'>For security reasons, please delete this `install.php` file from your server now.</p>";
-
-} catch(PDOException $e) {
-    $message = "<h2>❌ Installation Failed!</h2>";
-    $message .= "<p>An error occurred: " . $e->getMessage() . "</p>";
-    $message .= "<p>Please check your `config.php` settings and ensure your database user has the correct privileges.</p>";
+// Function to display messages
+function show_message($message, $type = 'info') {
+    echo "<div class='message {$type}'>{$message}</div>";
 }
 
-$conn = null; // Close connection
+// Function to execute a SQL query
+function execute_query($link, $query) {
+    if (mysqli_query($link, $query)) {
+        return true;
+    } else {
+        show_message("Error executing query: " . mysqli_error($link), 'error');
+        return false;
+    }
+}
+
+// Function to generate a random password
+function generate_password($length = 12) {
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()';
+    return substr(str_shuffle($chars), 0, $length);
+}
+
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CineCraze Installer</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #141414; color: #fff; margin: 0; padding: 40px; text-align: center; }
-        .installer-box { background-color: #1f1f1f; border: 1px solid #333; border-radius: 12px; max-width: 700px; margin: auto; padding: 30px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f4f4; color: #333; line-height: 1.6; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { color: #e50914; }
-        p { line-height: 1.6; color: #e6e6e6; }
-        strong { color: #fff; }
-        h2 { color: #46d369; }
-        code { background-color: #333; padding: 2px 5px; border-radius: 4px; }
+        .message { padding: 15px; margin-bottom: 20px; border-radius: 5px; border: 1px solid; }
+        .info { background-color: #e6f7ff; border-color: #91d5ff; color: #0050b3; }
+        .success { background-color: #f6ffed; border-color: #b7eb8f; color: #389e0d; }
+        .error { background-color: #fff1f0; border-color: #ffa39e; color: #cf1322; }
+        .warning { background-color: #fffbe6; border-color: #ffe58f; color: #d46b08; }
+        code { background: #eee; padding: 2px 5px; border-radius: 3px; }
+        .credentials { border: 2px dashed #e50914; padding: 20px; text-align: center; margin-top: 20px; }
+        .credentials h3 { margin-top: 0; }
     </style>
 </head>
 <body>
-    <div class="installer-box">
-        <h1>🎬 CineCraze Installer</h1>
-        <hr style="border: 1px solid #333; margin: 20px 0;">
-        <div>
-            <?php echo $message; ?>
+    <div class="container">
+        <h1>CineCraze Installer</h1>
+
+        <?php
+        // --- Step 1: Check for config.php ---
+        if (!file_exists($db_config_file)) {
+            if (file_exists('config.php.example')) {
+                show_message("The <code>config.php</code> file was not found. Please rename <code>config.php.example</code> to <code>config.php</code> and fill in your database credentials.", 'error');
+            } else {
+                show_message("The <code>config.php</code> file was not found, and the example file is also missing. Please create a <code>config.php</code> file with your database credentials.", 'error');
+            }
+            exit;
+        }
+
+        show_message("<code>config.php</code> found. Proceeding with installation...", 'success');
+
+        // --- Step 2: Connect to the database ---
+        require_once($db_config_file);
+
+        $link = mysqli_connect(DB_HOST, DB_USERNAME, DB_PASSWORD);
+
+        if (!$link) {
+            show_message("Database connection failed: " . mysqli_connect_error(), 'error');
+            exit;
+        }
+
+        show_message("Successfully connected to MySQL server.", 'success');
+
+        // --- Step 3: Create the database if it doesn't exist ---
+        $db_name = DB_NAME;
+        $sql = "CREATE DATABASE IF NOT EXISTS `$db_name`";
+
+        if (execute_query($link, $sql)) {
+            show_message("Database <code>$db_name</code> created or already exists.", 'success');
+        } else {
+            exit;
+        }
+
+        // Select the database
+        mysqli_select_db($link, $db_name);
+
+        // --- Step 4: Create tables from schema.sql ---
+        if (!file_exists($db_schema_file)) {
+            show_message("The <code>$db_schema_file</code> file was not found. Cannot create tables.", 'error');
+            exit;
+        }
+
+        $schema = file_get_contents($db_schema_file);
+
+        if (mysqli_multi_query($link, $schema)) {
+            // Clear multi_query results
+            while (mysqli_more_results($link) && mysqli_next_result($link)) {;}
+            show_message("Database tables created successfully.", 'success');
+        } else {
+            show_message("Error creating tables: " . mysqli_error($link), 'error');
+            exit;
+        }
+
+        // --- Step 5: Create a default admin user ---
+        $admin_password = generate_password();
+        $hashed_password = password_hash($admin_password, PASSWORD_DEFAULT);
+
+        $stmt = mysqli_prepare($link, "INSERT INTO users (username, password) VALUES (?, ?) ON DUPLICATE KEY UPDATE password=?");
+        mysqli_stmt_bind_param($stmt, "sss", $default_admin_user, $hashed_password, $hashed_password);
+
+        if (mysqli_stmt_execute($stmt)) {
+            show_message("Admin user created/updated successfully.", 'success');
+        } else {
+            show_message("Error creating admin user: " . mysqli_stmt_error($stmt), 'error');
+            exit;
+        }
+
+        mysqli_stmt_close($stmt);
+        mysqli_close($link);
+
+        // --- Step 6: Display success message ---
+        ?>
+        <div class="credentials">
+            <h3>Installation Complete!</h3>
+            <p>Your admin credentials are:</p>
+            <p><strong>Username:</strong> <code><?php echo $default_admin_user; ?></code></p>
+            <p><strong>Password:</strong> <code><?php echo $admin_password; ?></code></p>
+            <p>Please save these credentials in a safe place.</p>
         </div>
+
+        <div class="message warning">
+            <strong>IMPORTANT:</strong> For security reasons, please delete this <code>install.php</code> file from your server immediately.
+        </div>
+
+        <a href="login.php" style="display: block; text-align: center; font-size: 1.2em; color: #e50914; font-weight: bold;">Go to Admin Login</a>
     </div>
 </body>
 </html>

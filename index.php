@@ -3164,19 +3164,205 @@
             history.scrollRestoration = 'manual';
         }
 
-        // --- API Communication & Data Handling ---
-        const API_URL = 'api/index.php';
-        const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
-        const PLACEHOLDER_IMAGE_URL = 'https://movie-fcs.fwh.is/cinecraze/cinecraze.png';
-        
-        let currentContent = [];
-        let currentPage = 1;
-        let totalPages = 1;
-        let isFetching = false;
-        let currentFilters = {};
+        // --- IndexedDB Caching ---
+        const DB_NAME = 'CineCrazeDB';
+        const DB_VERSION = 2;
+        const STORE_NAME = 'playlistStore';
+        const WATCH_LATER_STORE_NAME = 'watchLaterStore';
+        const PLAYLIST_KEY = 'mainPlaylist';
+
+        const dbUtil = {
+            open: function() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onupgradeneeded = event => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains(STORE_NAME)) {
+                            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(WATCH_LATER_STORE_NAME)) {
+                            db.createObjectStore(WATCH_LATER_STORE_NAME, { keyPath: 'id' });
+                        }
+                    };
+                    request.onsuccess = event => {
+                        resolve(event.target.result);
+                    };
+                    request.onerror = event => {
+                        console.error('IndexedDB error:', event.target.errorCode);
+                        reject('IndexedDB error: ' + event.target.errorCode);
+                    };
+                });
+            },
+            get: function(db, key) {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        reject("Database connection is not available.");
+                        return;
+                    }
+                    const transaction = db.transaction([STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.get(key);
+                    request.onsuccess = event => {
+                        resolve(event.target.result ? event.target.result.data : null);
+                    };
+                    request.onerror = event => {
+                        console.error('Error getting data from DB:', event.target.errorCode);
+                        reject('Error getting data from DB: ' + event.target.errorCode);
+                    };
+                });
+            },
+            set: function(db, key, value) {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        reject("Database connection is not available.");
+                        return;
+                    }
+                    const transaction = db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.put({ id: key, data: value, timestamp: new Date() });
+                    request.onsuccess = event => {
+                        resolve(event.target.result);
+                    };
+                    request.onerror = event => {
+                        console.error('Error setting data in DB:', event.target.errorCode);
+                        reject('Error setting data in DB: ' + event.target.errorCode);
+                    };
+                });
+            },
+            clear: function(db) {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        reject("Database connection is not available.");
+                        return;
+                    }
+                    const transaction = db.transaction([STORE_NAME], 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.clear();
+                    request.onsuccess = () => {
+                        console.log("IndexedDB store cleared.");
+                        resolve();
+                    };
+                    request.onerror = event => {
+                        console.error('Error clearing DB store:', event.target.errorCode);
+                        reject('Error clearing DB store: ' + event.target.errorCode);
+                    };
+                });
+            }
+        };
+
+        // Configuration
+        const watchLaterDbUtil = {
+            open: function() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onupgradeneeded = event => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains(STORE_NAME)) {
+                            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                        }
+                        if (!db.objectStoreNames.contains(WATCH_LATER_STORE_NAME)) {
+                            db.createObjectStore(WATCH_LATER_STORE_NAME, { keyPath: 'id' });
+                        }
+                    };
+                    request.onsuccess = event => {
+                        resolve(event.target.result);
+                    };
+                    request.onerror = event => {
+                        console.error('IndexedDB error:', event.target.errorCode);
+                        reject('IndexedDB error: ' + event.target.errorCode);
+                    };
+                });
+            },
+            get: function(db, key) {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        reject("Database connection is not available.");
+                        return;
+                    }
+                    const transaction = db.transaction([WATCH_LATER_STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(WATCH_LATER_STORE_NAME);
+                    const request = store.get(key);
+                    request.onsuccess = event => {
+                        resolve(event.target.result);
+                    };
+                    request.onerror = event => {
+                        console.error('Error getting data from DB:', event.target.errorCode);
+                        reject('Error getting data from DB: ' + event.target.errorCode);
+                    };
+                });
+            },
+            set: function(db, value) {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        return reject("Database connection is not available.");
+                    }
+                    try {
+                        const transaction = db.transaction([WATCH_LATER_STORE_NAME], 'readwrite');
+                        transaction.oncomplete = () => {
+                            resolve();
+                        };
+                        transaction.onerror = () => {
+                            reject(transaction.error);
+                        };
+                        const store = transaction.objectStore(WATCH_LATER_STORE_NAME);
+                        store.put(value);
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            },
+            delete: function(db, key) {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        return reject("Database connection is not available.");
+                    }
+                    try {
+                        const transaction = db.transaction([WATCH_LATER_STORE_NAME], 'readwrite');
+                        transaction.oncomplete = () => {
+                            resolve();
+                        };
+                        transaction.onerror = () => {
+                            reject(transaction.error);
+                        };
+                        const store = transaction.objectStore(WATCH_LATER_STORE_NAME);
+                        store.delete(key);
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            },
+            getAll: function(db) {
+                return new Promise((resolve, reject) => {
+                    if (!db) {
+                        reject("Database connection is not available.");
+                        return;
+                    }
+                    const transaction = db.transaction([WATCH_LATER_STORE_NAME], 'readonly');
+                    const store = transaction.objectStore(WATCH_LATER_STORE_NAME);
+                    const request = store.getAll();
+                    request.onsuccess = event => {
+                        resolve(event.target.result);
+                    };
+                    request.onerror = event => {
+                        console.error('Error getting all data from DB:', event.target.errorCode);
+                        reject('Error getting all data from DB: ' + event.target.errorCode);
+                    };
+                });
+            }
+        };
 
         const ITEMS_PER_PAGE = 20;
-        const LAZY_LOAD_THRESHOLD = 100;
+        const LAZY_LOAD_THRESHOLD = 100; // px from bottom to trigger load
+        const PLACEHOLDER_IMAGE_URL = 'https://movie-fcs.fwh.is/cinecraze/cinecraze.png';
+        // TMDB API removed - using local data only
+        
+        // SAMPLE DATA - Replace this with your actual data source
+        let cineData = null;
+        let cachedContent = [];
+        let currentPage = 1;
+        let totalPages = 0;
+        let isFetching = false;
+        let isInitialLoad = true; // Flag for initial content shuffle
 
         // DOM Elements
         const elements = {
@@ -3196,6 +3382,12 @@
             viewerPage: document.getElementById('viewer-page'),
             viewerTitle: document.getElementById('viewer-title'),
             viewerDescription: document.getElementById('viewer-description'),
+            // viewerRating: document.getElementById('viewer-rating'), // Not used
+            // viewerDuration: document.getElementById('viewer-duration'), // Not used
+            // viewerYear: document.getElementById('viewer-year'), // Not used
+            // viewerCountry: document.getElementById('viewer-country'), // Not used
+            serverSelect: document.getElementById('quality-select'),
+            playerServerSelector: document.getElementById('player-server-selector'),
             serverSelectorContainer: document.getElementById('server-selector-container'),
             serverSelector: document.getElementById('server-selector'),
             episodeSelectorContainer: document.getElementById('episode-selector-container'),
@@ -3213,205 +3405,120 @@
             searchContainer: document.querySelector('.search-container'),
             backButton: document.getElementById('back-button'),
             loadingSpinner: document.getElementById('loading-spinner'),
-            paginationContainer: document.getElementById('pagination-container'),
-            // Add other elements as needed
+            likeCheckbox: document.getElementById('like-checkbox'),
+            dislikeCheckbox: document.getElementById('dislike-checkbox'),
+            shareCheckbox: document.getElementById('share-checkbox'),
+            likeCountSpan: document.getElementById('like-count-span'),
+            dislikeCountSpan: document.getElementById('dislike-count-span'),
+            progressBarContainer: document.getElementById('progress-bar-container'),
+            progressBar: document.getElementById('progress-bar'),
+            progressBarText: document.getElementById('progress-bar-text'),
+            // Containers for moving elements
+            relatedVideosContainer: document.querySelector('.related-videos'),
+            videoDetailsContainer: document.querySelector('.video-details'),
+            // Episode navigation buttons (to be created)
+            prevEpisodeBtn: null,
+            nextEpisodeBtn: null,
+            hamburgerBtn: document.getElementById('hamburger-btn'),
+            mobileFiltersMenu: document.querySelector('.mobile-filters-menu'),
+            stretchBtn: document.getElementById('stretch-btn'),
+
+            // Parental Controls
+            parentalControlsLink: document.getElementById('parental-controls-link'),
+            parentalControlsModal: document.getElementById('parental-controls-modal'),
+            closeParentalControlsModal: document.getElementById('close-parental-controls-modal'),
+            pinDisplay: document.querySelector('.pin-display'),
+            pinStatusText: document.querySelector('.pin-status-text'),
+            pinPad: document.querySelector('.pin-pad'),
+            resetPinBtn: document.getElementById('reset-pin-btn'),
+            changeRatingsBtn: document.getElementById('change-ratings-btn'),
+            allowedRatingsDisplay: document.getElementById('allowed-ratings-display'),
+            unratedContentToggle: document.getElementById('unrated-content-toggle'),
+
+            ratingsSelectModal: document.getElementById('ratings-select-modal'),
+            ratingsCheckboxContainer: document.getElementById('ratings-checkbox-container'),
+            cancelRatingsBtn: document.getElementById('cancel-ratings-btn'),
+            okRatingsBtn: document.getElementById('ok-ratings-btn'),
+
+            pinEntryModal: document.getElementById('pin-entry-modal'),
+            closePinEntryModal: document.getElementById('close-pin-entry-modal'),
+            pinEntryTitle: document.getElementById('pin-entry-title'),
+            pinDisplayInput: document.querySelector('.pin-display-input'),
+            pinStatusTextInput: document.querySelector('.pin-status-text-input'),
+            pinPadInput: document.querySelector('.pin-pad-input'),
+            cancelPinEntryBtn: document.getElementById('cancel-pin-entry-btn'),
+            okPinEntryBtn: document.getElementById('ok-pin-entry-btn')
         };
 
         // State
         let currentView = 'grid';
-        let currentContentInfo = {};
+        let currentContentInfo = {}; // To store current viewed content info for save/like
+        let currentContent = [];
         let currentCarouselIndex = 0;
         let playerInstance = null;
-        let watchLaterItemsSet = new Set(); // Keep watch later logic client-side for now
+        let dashPlayer = null;
+        let currentEpisode = null;
+        let currentSeason = null;
+        let currentSeries = null;
+        let isStretched = false;
+        let watchLaterItemsSet = new Set();
 
-        async function init() {
-            // Parental controls and other UI setup can remain
-            // createEpisodeNavigationButtons();
+        // Parental Controls State
+        let parentalControls = {
+            pin: null,
+            allowedRatings: [],
+            allowUnrated: true
+        };
+        let currentPinInput = "";
+        let pinEntryCallback = null; // To store what to do after successful PIN entry
+        let isSettingPin = false;
+        let tempPin = '';
 
-            await renderContentFilters();
-            await renderCarousel();
-            await renderContent(); // Initial content load
-
-            setupEventListeners();
-            // setupMobileBackButton();
-            setupLazyLoading();
-            history.replaceState({ page: 'browse' }, 'Browse Content', window.location.pathname + window.location.search);
+        // Function to shuffle an array
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
         }
 
-        async function renderContent(filters = {}, page = 1) {
-            isFetching = true;
-            elements.loadingSpinner.style.display = 'block';
-            currentPage = page;
-            currentFilters = filters;
-
-            const params = new URLSearchParams({
-                action: 'browse',
-                page: currentPage,
-                limit: ITEMS_PER_PAGE,
-                ...currentFilters
+        // Sort content based on criteria
+        function sortContent(content, criteria) {
+            return [...content].sort((a, b) => {
+                switch(criteria) {
+                    case 'newest':
+                        return (parseInt(b.Year) || 0) - (parseInt(a.Year) || 0);
+                    case 'popular':
+                        return (parseFloat(b.Rating) || 0) - (parseFloat(a.Rating) || 0);
+                    case 'rating':
+                        return (parseFloat(b.Rating) || 0) - (parseFloat(a.Rating) || 0);
+                    default:
+                        return 0;
+                }
             });
-
-            try {
-                const response = await fetch(`${API_URL}?${params}`);
-                const result = await response.json();
-
-                if (result.success) {
-                    currentContent = result.data.items;
-                    totalPages = result.data.pagination.totalPages;
-                    renderCurrentView();
-                    renderPaginationControls();
-                } else {
-                    throw new Error(result.message);
-                }
-            } catch (error) {
-                console.error('Error fetching data:', error);
-            } finally {
-                isFetching = false;
-                elements.loadingSpinner.style.display = 'none';
-            }
         }
 
-        async function renderCarousel() {
-            try {
-                const response = await fetch(`${API_URL}?action=featured`);
-                const result = await response.json();
-                if (result.success && result.data.length > 0) {
-                    elements.carouselInner.innerHTML = '';
-                    elements.carouselIndicators.innerHTML = '';
-                    result.data.forEach((item, index) => {
-                        const carouselItem = document.createElement('div');
-                        carouselItem.className = 'carousel-item';
-                        carouselItem.innerHTML = `
-                            <img src="${TMDB_IMAGE_BASE}${item.backdrop_path}" alt="${item.title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
-                            <div class="carousel-content">
-                                <h2>${item.title}</h2>
-                                <div class="carousel-meta">
-                                    ${generateStarRating(item.rating)}
-                                    <span class="carousel-year">${item.year}</span>
-                                </div>
-                                <p>${item.description}</p>
-                            </div>`;
-                        carouselItem.addEventListener('click', () => openViewer(item));
-                        elements.carouselInner.appendChild(carouselItem);
+        // Function to create episode navigation buttons
+        function createEpisodeNavigationButtons() {
+            elements.prevEpisodeBtn = document.createElement('button');
+            elements.prevEpisodeBtn.type = 'button';
+            elements.prevEpisodeBtn.className = 'plyr__controls__item plyr__control'; // Standard Plyr classes
+            elements.prevEpisodeBtn.id = 'prev-episode-btn';
+            elements.prevEpisodeBtn.setAttribute('aria-label', 'Previous Episode');
+            elements.prevEpisodeBtn.innerHTML = '<i class="fas fa-backward"></i>';
+            elements.prevEpisodeBtn.style.display = 'none'; // Initially hidden
 
-                        const indicator = document.createElement('div');
-                        indicator.className = 'indicator';
-                        indicator.dataset.index = index;
-                        indicator.addEventListener('click', () => {
-                            currentCarouselIndex = index;
-                            updateCarousel();
-                        });
-                        elements.carouselIndicators.appendChild(indicator);
-                    });
-                    updateCarousel();
-                }
-            } catch (error) {
-                console.error('Error fetching featured content:', error);
-            }
+            elements.nextEpisodeBtn = document.createElement('button');
+            elements.nextEpisodeBtn.type = 'button';
+            elements.nextEpisodeBtn.className = 'plyr__controls__item plyr__control'; // Standard Plyr classes
+            elements.nextEpisodeBtn.id = 'next-episode-btn';
+            elements.nextEpisodeBtn.setAttribute('aria-label', 'Next Episode');
+            elements.nextEpisodeBtn.innerHTML = '<i class="fas fa-forward"></i>';
+            elements.nextEpisodeBtn.style.display = 'none'; // Initially hidden
         }
 
-        async function renderContentFilters() {
-            try {
-                const response = await fetch(`${API_URL}?action=get_filters`);
-                const result = await response.json();
-                if (result.success) {
-                    const { genres, years, countries } = result.data;
-
-                    const populateSelect = (selectElement, options) => {
-                        options.forEach(optionValue => {
-                            const option = document.createElement('option');
-                            option.value = typeof optionValue === 'string' ? optionValue.toLowerCase() : optionValue;
-                            option.textContent = optionValue;
-                            selectElement.appendChild(option);
-                        });
-                    };
-
-                    populateSelect(elements.genreFilter, genres);
-                    populateSelect(elements.yearFilter, years);
-                    populateSelect(elements.countryFilter, countries);
-                }
-            } catch (error) {
-                console.error('Error fetching filters:', error);
-            }
-        }
-
-        function renderCurrentView() {
-            elements.contentGrid.style.display = 'none';
-            elements.contentList.style.display = 'none';
-            // elements.watchLaterGrid.style.display = 'none';
-
-            let container;
-            let viewClass = 'grid';
-
-            if (currentView === 'grid') {
-                container = elements.contentGrid;
-                container.style.display = 'grid';
-            } else {
-                container = elements.contentList;
-                container.style.display = 'flex';
-                viewClass = 'list';
-            }
-            container.innerHTML = '';
-
-            currentContent.forEach(item => {
-                const card = createContentCard(item, viewClass);
-                container.appendChild(card);
-            });
-            setupLazyLoading();
-        }
-
-        function createContentCard(item, viewType) {
-            const card = document.createElement('div');
-            card.className = `content-card ${viewType}`;
-            card.dataset.id = item.id;
-            card.dataset.type = item.type;
-
-            let badge = '';
-            if (item.type === 'movie') badge = '<div class="card-badge badge-movie">MOVIE</div>';
-            else if (item.type === 'series') badge = '<div class="card-badge badge-series">SERIES</div>';
-            else if (item.type === 'live') badge = '<div class="card-badge badge-live">LIVE</div>';
-
-            const posterUrl = item.poster_path ? `${TMDB_IMAGE_BASE}${item.poster_path}` : PLACEHOLDER_IMAGE_URL;
-
-            card.innerHTML = `
-                <div class="card-img">
-                    <img data-src="${posterUrl}" alt="${item.title}" class="lazy-image" loading="lazy" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
-                    ${badge}
-                </div>
-                <div class="card-info">
-                    <div class="card-title-container">
-                        <h3 class="card-title">${item.title}</h3>
-                    </div>
-                    <div class="card-meta">
-                        ${generateStarRating(item.rating)}
-                        <span>${item.year || ''}</span>
-                    </div>
-                </div>`;
-
-            card.addEventListener('click', () => openViewer(item));
-            return card;
-        }
-
-        function renderPaginationControls() {
-            const container = elements.paginationContainer;
-            container.innerHTML = '';
-            if (totalPages <= 1) return;
-
-            // Simplified pagination for now
-            let paginationHTML = `<button class="pagination-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">&laquo;</button>`;
-            for (let i = 1; i <= totalPages; i++) {
-                paginationHTML += `<button class="pagination-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
-            }
-            paginationHTML += `<button class="pagination-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})">&raquo;</button>`;
-            container.innerHTML = paginationHTML;
-        }
-
-        function changePage(page) {
-            if (page < 1 || page > totalPages || page === currentPage) return;
-            renderContent(currentFilters, page);
-        }
-
-        // Keep utility functions like generateStarRating, setupLazyLoading, etc.
+        // Function to generate star rating HTML
         function generateStarRating(ratingStr) {
             const rating = parseFloat(ratingStr);
             if (isNaN(rating) || rating < 0 || rating > 10) {
@@ -3420,32 +3527,559 @@
 
             const numStars = 5;
             let starsHtml = '<span class="star-rating">';
+            // Convert 0-10 scale to 0-5 scale for star calculation
             const ratingOutOfFive = rating / 2;
 
             for (let i = 0; i < numStars; i++) {
-                if (ratingOutOfFive >= i + 1) starsHtml += '<i class="fas fa-star"></i>';
-                else if (ratingOutOfFive >= i + 0.5) starsHtml += '<i class="fas fa-star-half-alt"></i>';
-                else starsHtml += '<i class="far fa-star"></i>';
+                if (ratingOutOfFive >= i + 1) {
+                    starsHtml += '<i class="fas fa-star"></i>'; // Full star
+                } else if (ratingOutOfFive >= i + 0.5) {
+                    starsHtml += '<i class="fas fa-star-half-alt"></i>'; // Half star
+                } else {
+                    starsHtml += '<i class="far fa-star"></i>'; // Empty star
+                }
             }
             starsHtml += '</span>';
             return starsHtml;
         }
 
-        function setupLazyLoading() {
-            const lazyImages = document.querySelectorAll('.lazy-image');
-            const lazyLoad = () => {
-                lazyImages.forEach(img => {
-                    if (img.classList.contains('loaded')) return;
-                    const rect = img.getBoundingClientRect();
-                    if (rect.top < window.innerHeight + LAZY_LOAD_THRESHOLD) {
-                        img.src = img.dataset.src;
-                        img.onload = () => img.classList.add('loaded');
+        const countryNameToCodeMap = {
+            "USA": "us", "United States": "us", "United States of America": "us",
+            "UK": "gb", "United Kingdom": "gb",
+            "Canada": "ca",
+            "Japan": "jp",
+            "South Korea": "kr", "Korea": "kr",
+            "France": "fr",
+            "Germany": "de",
+            "India": "in",
+            "China": "cn",
+            "Spain": "es",
+            "Italy": "it",
+            "Australia": "au",
+            "Brazil": "br",
+            "Mexico": "mx",
+            "Philippines": "ph",
+            // Add more common mappings as needed
+        };
+
+        function getCountryFlagHtml(countryName) {
+            if (!countryName) return '';
+            const countryCode = countryNameToCodeMap[countryName.trim()] || countryName.toLowerCase().replace(/\s+/g, '-'); // Fallback for unmapped
+            if (countryCode) {
+                return `<span class="fi fi-${countryCode.toLowerCase()}"></span>`;
+            }
+            return ''; // Return empty if no code found, or could return countryName text
+        }
+
+        // Initialize the app
+        async function init() {
+            // Cache watch later items
+            try {
+                const db = await watchLaterDbUtil.open();
+                const watchLaterItems = await watchLaterDbUtil.getAll(db);
+                db.close();
+                watchLaterItemsSet = new Set(watchLaterItems.map(item => item.id));
+            } catch (error) {
+                console.error("Failed to cache watch later items:", error);
+            }
+
+            setupParentalControls(); // Setup parental controls first
+            createEpisodeNavigationButtons(); // Create buttons before they might be needed
+            fetchData().then(() => {
+                renderCarousel();
+                renderContentFilters();
+                renderContent();
+                setupEventListeners();
+                setupMobileBackButton(); // Setup mobile back button support
+                updateCarousel();
+                setupLazyLoading();
+                history.replaceState({ page: 'browse' }, 'Browse Content', window.location.pathname + window.location.search);
+            });
+        }
+
+        // Helpers for segmented playlist fetching
+        const MAX_PLAYLIST_SEGMENTS = 50; // safety cap
+        function getBasePathFromUrl(url) {
+            if (!url) return '';
+            const lastSlashIndex = url.lastIndexOf('/');
+            return lastSlashIndex >= 0 ? url.substring(0, lastSlashIndex + 1) : url;
+        }
+        function replaceFileName(url, fileName) {
+            return getBasePathFromUrl(url) + fileName;
+        }
+        function withCacheBuster(url) {
+            const separator = url.includes('?') ? '&' : '?';
+            return url + separator + 't=' + new Date().getTime();
+        }
+        async function tryFetchJson(url) {
+            try {
+                const response = await fetch(withCacheBuster(url));
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (err) {
+                console.warn('tryFetchJson failed for', url, err);
+                return null;
+            }
+        }
+        function mergeCineDataSegments(segments) {
+            if (!Array.isArray(segments) || segments.length === 0) return null;
+            const categoryNameToCategory = new Map();
+            const categoryNameToSeenTitles = new Map();
+            for (const segment of segments) {
+                if (!segment || !Array.isArray(segment.Categories)) continue;
+                for (const category of segment.Categories) {
+                    if (!category || !category.MainCategory || !Array.isArray(category.Entries)) continue;
+                    const key = String(category.MainCategory);
+                    if (!categoryNameToCategory.has(key)) {
+                        categoryNameToCategory.set(key, { MainCategory: category.MainCategory, Entries: [] });
+                        categoryNameToSeenTitles.set(key, new Set());
+                    }
+                    const targetCategory = categoryNameToCategory.get(key);
+                    const seen = categoryNameToSeenTitles.get(key);
+                    for (const entry of category.Entries) {
+                        const title = entry && entry.Title ? String(entry.Title) : null;
+                        if (!title) continue;
+                        if (seen.has(title)) continue;
+                        seen.add(title);
+                        targetCategory.Entries.push(entry);
+                    }
+                }
+            }
+            return { Categories: Array.from(categoryNameToCategory.values()) };
+        }
+        async function tryFetchSegmented(basePlaylistUrl) {
+            const segments = [];
+            let foundAny = false;
+            for (let i = 1; i <= MAX_PLAYLIST_SEGMENTS; i++) {
+                const progress = Math.round((i / MAX_PLAYLIST_SEGMENTS) * 100);
+                elements.progressBar.style.width = `${progress}%`;
+                elements.progressBarText.textContent = `Fetching segment ${i} of ${MAX_PLAYLIST_SEGMENTS}...`;
+
+                const numberedUrl = replaceFileName(basePlaylistUrl, `playlist${i}.json`);
+                let data = await tryFetchJson(numberedUrl);
+                if (!data) {
+                    const dashedUrl = replaceFileName(basePlaylistUrl, `playlist-${i}.json`);
+                    data = await tryFetchJson(dashedUrl);
+                }
+                if (!data) {
+                    if (foundAny) {
+                        elements.progressBar.style.width = `100%`;
+                        elements.progressBarText.textContent = `Found ${segments.length} segments. Merging data...`;
+                    }
+                    break;
+                }
+                foundAny = true;
+                segments.push(data);
+            }
+            if (!foundAny) return null;
+            return mergeCineDataSegments(segments);
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch('api/content.php');
+                const data = await response.json();
+                if (data.Categories) {
+                    cineData = data;
+                } else {
+                    throw new Error("Invalid data format from API.");
+                }
+            } catch (error) {
+                console.error("Failed to fetch data from API:", error);
+                const errorMessage = document.createElement('div');
+                errorMessage.style.cssText = `
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: var(--youtube-gray);
+                    padding: 20px;
+                    border-radius: 8px;
+                    text-align: center;
+                    z-index: 10000;
+                    max-width: 400px;
+                `;
+                errorMessage.innerHTML = `
+                    <h3>⚠️ Data Loading Failed</h3>
+                    <p>Unable to load content from the server. Please try again later.</p>
+                    <button onclick="this.parentElement.remove(); window.location.reload();" style="
+                        background: var(--primary);
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        margin-top: 10px;
+                    ">Retry</button>
+                `;
+                document.body.appendChild(errorMessage);
+            }
+        }
+
+        // TMDB API function removed - using local data only
+
+        // No longer needed, data is pre-enriched
+        // async function fixDataInconsistencies() { ... }
+
+        // Helper function to get random distinct items from an array
+        function getRandomItems(arr, count) {
+            if (!arr || arr.length === 0) return [];
+            const shuffled = [...arr].sort(() => 0.5 - Math.random());
+            return shuffled.slice(0, Math.min(count, arr.length));
+        }
+
+        // Render carousel
+        function renderCarousel() {
+            if (!cineData || !cineData.Categories || cineData.Categories.length < 3) {
+                console.warn("Carousel data is not as expected. Skipping render.");
+                return;
+            }
+
+            const featuredContent = [];
+            const moviesCategory = cineData.Categories.find(cat => cat.MainCategory.toLowerCase().includes('movie'));
+            const seriesCategory = cineData.Categories.find(cat => cat.MainCategory.toLowerCase().includes('series'));
+            const liveCategory = cineData.Categories.find(cat => cat.MainCategory.toLowerCase().includes('live'));
+
+            // Add randomly selected movies
+            if (moviesCategory && moviesCategory.Entries) {
+                getRandomItems(moviesCategory.Entries, 3).forEach(movie => {
+                    featuredContent.push({
+                        type: 'movie',
+                        title: movie.Title,
+                        description: movie.Description,
+                        image: movie.Poster,
+                        // Store original item for click handling
+                        originalItem: movie
+                    });
+                });
+            }
+
+            // Add randomly selected TV series
+            if (seriesCategory && seriesCategory.Entries) {
+                getRandomItems(seriesCategory.Entries, 1).forEach(series => {
+                    featuredContent.push({
+                        type: 'series',
+                        title: series.Title,
+                        description: series.Description || `Popular ${series.SubCategory} series`,
+                        image: series.Poster,
+                        originalItem: series
+                    });
+                });
+            }
+
+            // Add randomly selected live TV
+            if (liveCategory && liveCategory.Entries) {
+                getRandomItems(liveCategory.Entries, 1).forEach(live => {
+                    featuredContent.push({
+                        type: 'live',
+                        title: live.Title,
+                        description: live.Description,
+                        image: live.Poster,
+                        originalItem: live
+                    });
+                });
+            }
+
+            // Shuffle the order of the collected featured content
+            shuffleArray(featuredContent);
+
+            // Render carousel items
+            elements.carouselInner.innerHTML = '';
+            elements.carouselIndicators.innerHTML = '';
+
+            featuredContent.forEach((item, index) => {
+                // Carousel item
+                const carouselItem = document.createElement('div');
+                carouselItem.className = 'carousel-item';
+                // Get year from the original item if available
+                const year = item.originalItem && item.originalItem.Year ? item.originalItem.Year : '';
+                const ratingHtml = item.originalItem ? generateStarRating(item.originalItem.Rating) : '';
+
+                carouselItem.innerHTML = `
+                    <img src="${item.image}" alt="${item.title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
+                    <div class="carousel-content">
+                        <h2>${item.title}</h2>
+                        <div class="carousel-meta">
+                            ${ratingHtml}
+                            ${year ? `<span class="carousel-year">${year}</span>` : ''}
+                        </div>
+                        <p>${item.description}</p>
+                    </div>
+                `;
+                elements.carouselInner.appendChild(carouselItem);
+
+                // Indicator
+                const indicator = document.createElement('div');
+                indicator.className = 'indicator';
+                indicator.dataset.index = index;
+                if (index === 0) indicator.classList.add('active');
+                elements.carouselIndicators.appendChild(indicator);
+
+                // Add click event to indicator
+                indicator.addEventListener('click', () => {
+                    currentCarouselIndex = index;
+                    updateCarousel();
+                });
+
+                // Make carousel item clickable
+                carouselItem.addEventListener('click', () => {
+                    if (item.originalItem) {
+                        // The 'type' is already correctly set in featuredContent items
+                        openViewer({ ...item.originalItem, type: item.type });
+                    } else {
+                        // Fallback or error if originalItem is somehow missing
+                        console.error("Carousel item is missing originalItem data:", item);
                     }
                 });
-            };
-            lazyLoad();
-            window.addEventListener('scroll', lazyLoad);
-            window.addEventListener('resize', lazyLoad);
+            });
+        }
+
+        // Render content filters
+        function renderContentFilters() {
+            if (!cineData || !cineData.Categories) return;
+
+            // Get unique genres and countries
+            const genres = new Set();
+            const countries = new Set();
+
+            cineData.Categories.forEach(category => {
+                category.Entries.forEach(entry => {
+                    if (entry.SubCategory) genres.add(entry.SubCategory);
+                    if (entry.Country) countries.add(entry.Country);
+                });
+            });
+
+            // Populate genre filter
+            const genreFilter = elements.genreFilter;
+            genres.forEach(genre => {
+                const option = document.createElement('option');
+                option.value = genre.toLowerCase();
+                option.textContent = genre;
+                genreFilter.appendChild(option);
+            });
+
+            // Populate country filter
+            const countryFilter = elements.countryFilter;
+            countries.forEach(country => {
+                const option = document.createElement('option');
+                option.value = country.toLowerCase();
+                option.textContent = country;
+                countryFilter.appendChild(option);
+            });
+
+            // Populate year filter
+            const yearFilter = elements.yearFilter;
+            const years = new Set();
+            cineData.Categories.forEach(category => {
+                category.Entries.forEach(entry => {
+                    if (entry.Year) {
+                        years.add(entry.Year);
+                    }
+                });
+            });
+
+            const sortedYears = Array.from(years).sort((a, b) => b - a);
+            sortedYears.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                yearFilter.appendChild(option);
+            });
+        }
+
+        // Render content based on filters
+        async function renderContent(category = 'all') {
+            if (!cineData || !cineData.Categories) return;
+
+            const filtersSection = document.querySelector('.filters-section');
+
+            // Reset pagination
+            currentPage = 1;
+            currentContent = [];
+
+            if (category === 'watch-later') {
+                filtersSection.style.display = 'none'; // Hide filters for Watch Later
+                const db = await watchLaterDbUtil.open();
+                const watchLaterItems = await watchLaterDbUtil.getAll(db);
+                db.close();
+                currentContent = watchLaterItems.map(item => ({ ...item, type: item.type || 'movie' }));
+
+                totalPages = Math.ceil(currentContent.length / ITEMS_PER_PAGE);
+                cachedContent = [...currentContent];
+                currentView = 'watch-later'; // Set the view
+                renderCurrentView();
+                renderPaginationControls();
+                setupLazyLoading();
+                return;
+            } else {
+                const icon = elements.viewToggleBtn.querySelector('i');
+                if (icon.classList.contains('fa-list')) {
+                    currentView = 'list';
+                } else {
+                    currentView = 'grid';
+                }
+                filtersSection.style.display = 'block'; // Show filters for other categories
+            }
+
+            // Get selected category
+            const genre = elements.genreFilter.value.toLowerCase();
+            const country = elements.countryFilter.value.toLowerCase();
+            const year = elements.yearFilter.value;
+            const sortBy = elements.sortFilter.value;
+
+            // Filter content
+            cineData.Categories.forEach(cat => {
+                if (category === 'all' || cat.MainCategory.toLowerCase().includes(category)) {
+                    cat.Entries.forEach(entry => {
+                        // Check genre and country filters
+                        const genreMatch = genre === 'all' ||
+                            (entry.SubCategory && entry.SubCategory.toLowerCase().includes(genre));
+                        const countryMatch = country === 'all' ||
+                            (entry.Country && entry.Country.toLowerCase().includes(country));
+                        const yearMatch = year === 'all' || (entry.Year && entry.Year.toString() === year);
+
+                        if (genreMatch && countryMatch && yearMatch && isContentAllowed(entry)) {
+                            currentContent.push({
+                                ...entry,
+                                type: cat.MainCategory.toLowerCase().includes('movie') ? 'movie' :
+                                    cat.MainCategory.toLowerCase().includes('series') ? 'series' : 'live'
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Shuffle content on initial load
+            if (isInitialLoad) {
+                currentContent = shuffleArray(currentContent);
+                isInitialLoad = false;
+            }
+            // Apply sorting if not initial load
+            else {
+                currentContent = sortContent(currentContent, sortBy);
+            }
+
+            // Calculate total pages
+            totalPages = Math.ceil(currentContent.length / ITEMS_PER_PAGE);
+
+            // Cache filtered content
+            cachedContent = [...currentContent];
+
+            // Render content
+            renderCurrentView();
+            renderPaginationControls();
+
+            // Re-initialize lazy loading for the new content
+            setupLazyLoading();
+        }
+
+        // Render the current view (grid or list)
+        function renderCurrentView() {
+            elements.contentGrid.style.display = 'none';
+            elements.contentList.style.display = 'none';
+            elements.watchLaterGrid.style.display = 'none';
+
+            let container;
+            let viewClass = 'grid';
+
+            if (currentView === 'watch-later') {
+                container = elements.watchLaterGrid;
+                container.style.display = 'grid';
+            } else if (currentView === 'grid') {
+                container = elements.contentGrid;
+                container.style.display = 'grid';
+            } else { // list
+                container = elements.contentList;
+                container.style.display = 'flex';
+                viewClass = 'list';
+            }
+
+            container.innerHTML = '';
+
+            const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+            const endIndex = startIndex + ITEMS_PER_PAGE;
+            const itemsToRender = currentContent.slice(startIndex, endIndex);
+
+            itemsToRender.forEach(item => {
+                const card = createContentCard(item, viewClass);
+                container.appendChild(card);
+            });
+
+            setupLazyLoading();
+        }
+
+        // Create a content card
+        function createContentCard(item, viewType) {
+            const card = document.createElement('div');
+            card.className = `content-card ${viewType}`;
+            card.dataset.id = item.Title.replace(/\s+/g, '-').toLowerCase();
+            card.dataset.type = item.type;
+
+            // Create badge based on content type
+            let badge = '';
+            if (item.type === 'movie') {
+                badge = '<div class="card-badge badge-movie">MOVIE</div>';
+            } else if (item.type === 'series') {
+                badge = '<div class="card-badge badge-series">SERIES</div>';
+            } else if (item.type === 'live') {
+                badge = '<div class="card-badge badge-live">LIVE</div>';
+            }
+
+            let deleteBtn = '';
+            let watchLaterIcon = '';
+            if (currentView === 'watch-later') {
+                deleteBtn = `<button class="delete-watch-later-btn" data-id="${item.id}"><i class="fas fa-trash"></i></button>`;
+            } else {
+                const isActive = watchLaterItemsSet.has(item.Title);
+                watchLaterIcon = `<button class="card-watch-later-btn ${isActive ? 'active' : ''}" data-id="${item.Title.replace(/\s+/g, '-').toLowerCase()}"><i class="fas fa-clock"></i></button>`;
+            }
+
+            card.innerHTML = `
+                <div class="card-img">
+                    <img data-src="${item.Thumbnail || item.Poster}" alt="${item.Title}" class="lazy-image" loading="lazy" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
+                    ${badge}
+                    ${deleteBtn}
+                    ${viewType === 'grid' ? watchLaterIcon : ''}
+                </div>
+                <div class="card-info">
+                    <div class="card-title-container">
+                        <h3 class="card-title">${item.Title}</h3>
+                        ${viewType === 'list' ? watchLaterIcon : ''}
+                    </div>
+                    <div class="card-meta">
+                        ${generateStarRating(item.Rating)}
+                        ${viewType === 'list' ?
+                            `<span class="meta-netflix-style">
+                                ${item.Year ? `<span>${item.Year}</span>` : ''}
+                                ${item.Country ? `<span class="meta-country">${getCountryFlagHtml(item.Country)} ${item.Country}</span>` : ''}
+                                ${item.Duration ? `<span>${item.Duration}</span>` : ''}
+                            </span>` :
+                            `${item.Duration ? `<span><i class="fas fa-clock"></i> ${item.Duration}</span>` : ''}
+                             ${item.Country ? `<span class="meta-country">${getCountryFlagHtml(item.Country)} ${item.Country}</span>` : ''}`
+                        }
+                    </div>
+                    ${viewType === 'list' ? `<p class="card-description">${item.Description || ''}</p>` : ''}
+                </div>
+            `;
+
+            if (currentView === 'watch-later') {
+                const btn = card.querySelector('.delete-watch-later-btn');
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation(); // prevent card click
+                    deleteFromWatchLater(item.id);
+                });
+            } else {
+                const watchLaterBtn = card.querySelector('.card-watch-later-btn');
+                if (watchLaterBtn) {
+                    watchLaterBtn.addEventListener('click', (e) => {
+                        e.stopPropagation(); // prevent card click
+                        toggleWatchLater(item, e.currentTarget);
+                    });
+                }
+            }
+
+            card.addEventListener('click', () => openViewer(item));
+            return card;
         }
 
 
@@ -3569,163 +4203,223 @@
             window.addEventListener('resize', lazyLoad);
         }
         
-        async function openViewer(item) {
+        // Open viewer for content
+        function openViewer(content) {
+            // Parental Control Check
+            if (!isContentAllowed(content)) {
+                elements.pinEntryTitle.textContent = "Enter PIN to Watch";
+                showModal(elements.pinEntryModal);
+                pinEntryCallback = () => {
+                    // Temporarily bypass the check for this one time
+                    openViewerInternal(content);
+                };
+                return; // Stop execution until PIN is entered
+            }
+            openViewerInternal(content);
+        }
+
+        function openViewerInternal(content) {
+            if (playerInstance) {
+                playerInstance.destroy();
+                playerInstance = null;
+            }
+            if (dashPlayer) {
+                dashPlayer.reset();
+                dashPlayer = null;
+            }
+
+            // Re-create the video element to ensure a clean state
+            const playerContainer = document.querySelector('.player-container');
+            playerContainer.innerHTML = '<video id="player" playsinline controls></video>';
+            elements.player = document.getElementById('player');
+
+
+            currentContentInfo = content;
+
+            incrementViewCount(content.Title);
+            history.pushState({ page: 'viewer', contentId: content.Title }, 'View Content', '#viewer');
+
             document.querySelector('.carousel').style.display = 'none';
             document.querySelector('.filters-section').style.display = 'none';
             document.querySelector('.content-container').style.display = 'none';
+
+            const setupViewerAndPlay = () => {
+                elements.viewerTitle.textContent = content.Title;
+                elements.viewerDescription.textContent = content.Description || 'No description available.';
+                // Reset selectors
+                if (elements.serverSelectorContainer) {
+                    elements.serverSelectorContainer.style.display = 'none';
+                }
+                if (elements.serverSelector) {
+                    elements.serverSelector.innerHTML = '';
+                }
+                elements.episodeSelectorContainer.style.display = 'none';
+                elements.episodeSelector.innerHTML = '<option value="">Select Episode</option>';
+                elements.seasonSelector.style.display = 'none';
+                if (elements.episodeSelectorContainer.parentNode !== elements.videoDetailsContainer) {
+                    elements.videoDetailsContainer.appendChild(elements.episodeSelectorContainer);
+                }
+                if (elements.seasonSelector.parentNode !== elements.videoDetailsContainer) {
+                    elements.videoDetailsContainer.appendChild(elements.seasonSelector);
+                }
+
+                currentSeason = null;
+                currentEpisode = null;
+                currentSeries = content;
+
+                if (content.type !== 'series' && content.Servers) {
+                    updatePlayerSource(content.Servers);
+                }
+                elements.seasonsGrid.innerHTML = '';
+
+                // ensureEpisodeButtonsInControls(); // This call is removed, logic moved to updateNavigationButtonsState
+
+                if (content.type === 'series' && content.Seasons) {
+                    if (elements.relatedVideosContainer) {
+                        elements.relatedVideosContainer.prepend(elements.seasonSelector);
+                        elements.relatedVideosContainer.prepend(elements.episodeSelectorContainer);
+                    }
+                    elements.seasonSelector.style.display = 'block';
+                    content.Seasons.forEach(season => { /* ... render season card ... */
+                        const seasonCard = document.createElement('div');
+                        seasonCard.className = 'season-card';
+                        seasonCard.innerHTML = `
+                            <img src="${season.SeasonPoster || content.Thumbnail}" alt="Season ${season.Season}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
+                            <div class="season-info">
+                                <h4>Season ${season.Season}</h4>
+                            </div>
+                        `;
+                        seasonCard.addEventListener('click', () => {
+                            openSeason(season);
+                        });
+                        elements.seasonsGrid.appendChild(seasonCard);
+                    });
+                    if (content.Seasons.length > 0) {
+                        openSeason(content.Seasons[0]); // This calls playEpisode -> updateNavigationButtonsState
+                    } else {
+                        updateNavigationButtonsState(); // Hide buttons if no seasons
+                    }
+                } else { // Movie or Live TV
+                    updateNavigationButtonsState(); // Hide episode buttons for non-series
+                }
+
+                // Render related content
+                elements.relatedGrid.innerHTML = '';
+                const relatedContent = cachedContent.filter(item => item.Title !== content.Title)
+                                               .sort(() => 0.5 - Math.random()).slice(0, 8);
+                relatedContent.forEach(item => { /* ... render related card ... */
+                    const card = document.createElement('div');
+                    card.className = 'related-card';
+                    const ratingHtml = generateStarRating(item.Rating);
+                    let metaNetflixStyle = '<span class="meta-netflix-style">';
+                    if (item.Year) metaNetflixStyle += `<span>${item.Year}</span>`;
+                    if (item.Country) metaNetflixStyle += `<span class="meta-country">${getCountryFlagHtml(item.Country)} ${item.Country}</span>`;
+                    if (item.Duration) metaNetflixStyle += `<span>${item.Duration}</span>`;
+                    metaNetflixStyle += '</span>';
+
+                    card.innerHTML = `
+                        <div class="related-thumbnail">
+                            <img src="${item.Thumbnail || item.Poster}" alt="${item.Title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
+                        </div>
+                        <div class="related-info">
+                            <h4>${item.Title}</h4>
+                            <div class="related-meta-stars">${ratingHtml}</div>
+                            <div class="related-meta-details">${metaNetflixStyle}</div>
+                            <div class="related-channel">CineCraze</div>
+                        </div>
+                    `;
+                    card.addEventListener('click', () => openViewer(item));
+                    elements.relatedGrid.appendChild(card);
+                });
+            };
+
+            if (!playerInstance) {
+                playerInstance = new Plyr('#player', {
+                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'pip', 'fullscreen'],
+                    youtube: { noCookie: true, rel: 0, showinfo: 0, iv_load_policy: 3 },
+                    quality: {
+                        default: 720,
+                        options: [1080, 720, 480, 360, 240],
+                    },
+                    autoplay: false, // Start with autoplay disabled for better mobile compatibility
+                    muted: false, // Allow sound by default
+                });
+
+                playerInstance.once('ready', event => {
+                    setupViewerAndPlay();
+                    addStretchButtonToPlayer();
+                    // Event listeners for fullscreen etc. should be attached here too, only once
+                    playerInstance.on('enterfullscreen', () => {
+                        if (screen.orientation && screen.orientation.lock) {
+                            screen.orientation.lock('landscape').catch(error => {
+                                console.log('Orientation lock failed: ', error);
+                            });
+                        }
+                    });
+                    playerInstance.on('exitfullscreen', () => {
+                        if (screen.orientation && screen.orientation.unlock) {
+                            screen.orientation.unlock();
+                        }
+                        if (elements.searchContainer) {
+                            elements.searchContainer.classList.remove('show');
+                        }
+                    });
+                });
+
+                document.addEventListener('fullscreenchange', () => {
+                    if (document.fullscreenElement && document.fullscreenElement.classList.contains('external-content-iframe')) {
+                        if (screen.orientation && screen.orientation.lock) {
+                            screen.orientation.lock('landscape').catch(error => {
+                                console.log('Orientation lock failed: ', error);
+                            });
+                        }
+                    }
+                });
+            } else {
+                // Player already exists, it should be ready.
+                setupViewerAndPlay();
+            }
+
             elements.viewerPage.style.display = 'block';
             window.scrollTo(0, 0);
 
-            elements.viewerTitle.textContent = 'Loading...';
-            elements.viewerDescription.textContent = '';
-            elements.serverSelectorContainer.style.display = 'none';
-            elements.episodeSelectorContainer.style.display = 'none';
-            elements.seasonSelector.style.display = 'none';
-            elements.relatedGrid.innerHTML = '<div class="loading-spinner" style="display:block;"></div>';
+            // --- Correct Event Listener Setup for Checkboxes ---
+            updateLikeDislikeUI(content.Title);
 
-            try {
-                const response = await fetch(`${API_URL}?action=details&id=${item.id}`);
-                const result = await response.json();
-
-                if (!result.success) throw new Error(result.message);
-
-                const content = result.data;
-                currentContentInfo = content;
-
-                elements.viewerTitle.textContent = content.title;
-                elements.viewerDescription.textContent = content.description || 'No description available.';
-
-                if (content.type === 'movie' || content.type === 'live') {
-                    elements.episodeSelectorContainer.style.display = 'none';
-                    elements.seasonSelector.style.display = 'none';
-                    await updatePlayerSource(content.servers);
-                } else if (content.type === 'series') {
-                    renderSeriesDetails(content);
+            // Remove old listeners and add new ones to prevent duplicates.
+            // The 'change' event is used for checkboxes.
+            const setupListener = (element, handler) => {
+                if (!element) return; // Guard against null elements
+                if (element._changeHandler) {
+                    element.removeEventListener('change', element._changeHandler);
                 }
-
-                renderRelatedContent(content.id);
-            } catch (error) {
-                elements.viewerTitle.textContent = 'Error';
-                elements.viewerDescription.textContent = `Failed to load content: ${error.message}`;
-                await updatePlayerSource(null);
-            }
-        }
-
-        async function updatePlayerSource(servers) {
-            if (!playerInstance) {
-                playerInstance = new Plyr('#player');
-            }
-            populateServerSelector(servers);
-
-            if (!servers || servers.length === 0) {
-                elements.playerMessageArea.textContent = 'No video source available.';
-                elements.playerMessageArea.style.display = 'block';
-                if (playerInstance) playerInstance.stop();
-                return;
-            }
-
-            const optimalServer = servers[0];
-            await playUrl(optimalServer.url, servers);
-        }
-
-        function populateServerSelector(servers) {
-            elements.serverSelector.innerHTML = '';
-            if (!servers || servers.length <= 1) {
-                elements.serverSelectorContainer.style.display = 'none';
-                return;
-            }
-
-            servers.forEach(server => {
-                const option = document.createElement('option');
-                option.value = server.url;
-                option.textContent = server.name || 'Default Server';
-                elements.serverSelector.appendChild(option);
-            });
-            elements.serverSelectorContainer.style.display = 'block';
-            elements.serverSelector.onchange = (e) => {
-                const selectedUrl = e.target.value;
-                const selectedServer = servers.find(s => s.url === selectedUrl);
-                if(selectedServer) {
-                    playUrl(selectedServer.url, servers);
-                }
-            };
-        }
-
-        function renderSeriesDetails(series) {
-            elements.seasonSelector.style.display = 'block';
-            elements.seasonsGrid.innerHTML = '';
-
-            series.seasons.forEach(season => {
-                const seasonCard = document.createElement('div');
-                seasonCard.className = 'season-card';
-                seasonCard.innerHTML = `
-                    <img src="${season.poster_path ? TMDB_IMAGE_BASE + season.poster_path : PLACEHOLDER_IMAGE_URL}" alt="${season.name}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
-                    <div class="season-info">
-                        <h4>${season.name}</h4>
-                    </div>
-                `;
-                seasonCard.addEventListener('click', () => renderEpisodeSelector(season, series));
-                elements.seasonsGrid.appendChild(seasonCard);
-            });
-
-            if (series.seasons.length > 0) {
-                renderEpisodeSelector(series.seasons[0], series);
-            }
-        }
-
-        function renderEpisodeSelector(season, series) {
-            currentContentInfo.currentSeason = season;
-            elements.episodeSelectorContainer.style.display = 'block';
-            elements.episodeSelector.innerHTML = '<option value="">Select Episode</option>';
-            season.episodes.forEach(ep => {
-                const option = document.createElement('option');
-                option.value = ep.id;
-                option.textContent = `E${ep.episode_number}: ${ep.title}`;
-                elements.episodeSelector.appendChild(option);
-            });
-
-            elements.episodeSelector.onchange = (e) => {
-                const episodeId = e.target.value;
-                const selectedEpisode = season.episodes.find(ep => ep.id == episodeId);
-                if (selectedEpisode) {
-                    playEpisode(selectedEpisode);
-                }
+                element._changeHandler = handler;
+                element.addEventListener('change', element._changeHandler);
             };
 
-            // Play the first episode of the season by default
-            if (season.episodes.length > 0) {
-                elements.episodeSelector.value = season.episodes[0].id;
-                playEpisode(season.episodes[0]);
-            }
-        }
+            // The handler functions (handleLike, handleDislike, handleShareVideo)
+            // already use the global `currentContentInfo`, so we don't need to pass `content`.
+            setupListener(elements.likeCheckbox, handleLike);
+            setupListener(elements.dislikeCheckbox, handleDislike);
+            setupListener(elements.shareCheckbox, () => {
+                handleShareVideo();
+                // Uncheck the share box immediately after action for better UX
+                setTimeout(() => {
+                    if (elements.shareCheckbox) {
+                        elements.shareCheckbox.checked = false;
+                    }
+                }, 500);
+            });
 
-        function playEpisode(episode) {
-            updatePlayerSource(episode.servers);
-        }
-
-        async function renderRelatedContent(currentId) {
-            // Fetch some browsing content to act as related
-            const response = await fetch(`${API_URL}?action=browse&limit=5`);
-            const result = await response.json();
-            if (result.success) {
-                elements.relatedGrid.innerHTML = '';
-                result.data.items
-                    .filter(item => item.id !== currentId)
-                    .forEach(item => {
-                        const card = document.createElement('div');
-                        card.className = 'related-card';
-                        card.innerHTML = `
-                            <div class="related-thumbnail">
-                                <img src="${TMDB_IMAGE_BASE}${item.poster_path}" alt="${item.title}" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';">
-                            </div>
-                            <div class="related-info">
-                                <h4>${item.title}</h4>
-                                <div class="related-channel">CineCraze</div>
-                            </div>
-                        `;
-                        card.addEventListener('click', () => openViewer(item));
-                        elements.relatedGrid.appendChild(card);
-                    });
+            const watchLaterBtn = document.getElementById('watch-later-btn');
+            if (watchLaterBtn) {
+                const newToggleHandler = () => toggleWatchLater(content);
+                if (watchLaterBtn._toggleHandler) {
+                    watchLaterBtn.removeEventListener('click', watchLaterBtn._toggleHandler);
+                }
+                watchLaterBtn.addEventListener('click', newToggleHandler);
+                watchLaterBtn._toggleHandler = newToggleHandler;
+                updateWatchLaterButton(content.Title);
             }
         }
         
@@ -6010,10 +6704,52 @@ async function switchToServer(server, allServers) {
         }
         
         // Enhanced player source update with DRM awareness
-        function playEpisode(episode) {
-            // This now correctly passes the whole servers array
-            populateServerSelector(episode.servers);
-            updatePlayerSource(episode.servers);
+        async function updatePlayerSource(servers) {
+            if (!playerInstance) return;
+
+            if (servers && servers.length > 0) {
+                // Use DRM-aware server selection
+                const optimalServer = selectOptimalServer(servers);
+
+                if (optimalServer) {
+                    // Check for special URLs first
+                    if (isVidsrcUrl(optimalServer.url) || isVidjoyUrl(optimalServer.url) || isVidsrcMeUrl(optimalServer.url) || isVidsrcToUrl(optimalServer.url) || isVidsrcXyzUrl(optimalServer.url) || isGoDrivePlayerUrl(optimalServer.url) || isVidLinkProUrl(optimalServer.url) || is2EmbedUrl(optimalServer.url) || isEmbedSuUrl(optimalServer.url) || isAutoEmbedUrl(optimalServer.url) || isVideasyUrl(optimalServer.url) || isMegaNzUrl(optimalServer.url) || isGoogleDriveUrl(optimalServer.url)) {
+                        playUrl(optimalServer.url, servers);
+                        return;
+                    }
+
+                    // Handle MPD files with enhanced DRM support
+                    if (optimalServer.url.includes('.mpd')) {
+                        await handleMPDStream(optimalServer.url, servers);
+                        return;
+                    }
+
+                    // Handle regular video sources
+                    const sources = servers.map(server => ({
+                        src: server.url,
+                        size: parseInt(server.name?.replace(/\D/g, '') || '0'),
+                        type: server.url.includes('m3u8') ? 'application/x-mpegURL' : 'video/mp4'
+                    }));
+
+                    playerInstance.source = {
+                        type: 'video',
+                        sources: sources,
+                    };
+
+                    // Ensure stretch button persists after source change
+                    addStretchButtonToPlayer();
+
+                    // Update in-page server dropdown for multiple servers
+                    updateServerDropdown(servers, optimalServer);
+
+                    // Add error handling for automatic server switching
+                    playerInstance.on('error', async (event) => {
+                        console.log('Player error detected, trying next server...');
+                        const currentIndex = servers.findIndex(s => s.url === optimalServer.url);
+                        await tryNextServer(servers, currentIndex);
+                    });
+                }
+            }
         }
         
         // Open season
