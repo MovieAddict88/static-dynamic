@@ -1,4 +1,5 @@
-      <!DOCTYPE html>
+      <?php require_once 'check_login.php'; ?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1759,6 +1760,11 @@ jobs:
     </script>
 </head>
 <body>
+    <div style="background: #000; padding: 10px; text-align: right; border-bottom: 1px solid #e50914;">
+        Welcome, <b><?php echo htmlspecialchars($_SESSION["username"]); ?></b>.
+        <a href="change_password.php" style="color: #fff; margin-left: 15px;">Change Password</a>
+        <a href="logout.php" style="color: #fff; margin-left: 15px;">Logout</a>
+    </div>
     <div class="container">
         <header>
             <h1>📁 Playlist Categories Manager</h1>
@@ -3273,31 +3279,6 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             }
         }
 
-        // TMDB API functions
-        async function fetchTMDB(endpoint, params = {}) {
-            const url = new URL(`${TMDB_BASE_URL}${endpoint}`);
-            url.searchParams.append('api_key', getTMDBApiKey());
-            
-            Object.entries(params).forEach(([key, value]) => {
-                url.searchParams.append(key, value);
-            });
-
-            try {
-                const response = await fetch(url);
-                if (!response.ok) {
-                    // If rate limited or API key issue, try switching to backup
-                    if (response.status === 429 || response.status === 401) {
-                        return await retryWithBackupApi(endpoint, params);
-                    }
-                    throw new Error(`TMDB API error: ${response.status}`);
-                }
-                return await response.json();
-            } catch (error) {
-                console.error('TMDB fetch error:', error);
-                showStatus('error', `TMDB API Error: ${error.message}`);
-                return null;
-            }
-        }
         
         // Retry with backup API keys
         async function retryWithBackupApi(endpoint, params = {}) {
@@ -3694,137 +3675,53 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         }
 
                  async function generateFromTMDB(type, tmdbId = null) {
-             console.log(`🎬 generateFromTMDB called with type: '${type}', tmdbId: ${tmdbId}`);
-             
-             const id = tmdbId || document.getElementById(`${type}-tmdb-id`).value;
-             
-             if (!id) {
-                 showStatus('warning', 'Please enter a TMDB ID');
-                 return;
-             }
-
-             showLoading(`${type}-loading`, true);
-             showStatus('info', `Generating ${type} with automatic VidSrc & VidJoy sources...`);
-             
-             try {
-                 if (type === 'movie') {
-                     console.log(`🎞️ Generating movie with ID: ${id}`);
-                     await generateMovie(id);
-                 } else if (type === 'series') {
-                     console.log(`📺 Generating series with ID: ${id}`);
-                     await generateSeries(id);
-                 } else {
-                     throw new Error(`Unknown content type: '${type}'. Expected 'movie' or 'series'.`);
-                 }
-                 
-                 updateDataStats();
-                 updatePreview();
-                 showStatus('success', `${type} generated successfully with automatic video sources!`);
-             } catch (error) {
-                 showStatus('error', `Error generating ${type}: ${error.message}`);
-             }
-             
-             showLoading(`${type}-loading`, false);
-         }
-
-                 async function generateMovie(tmdbId) {
-             const movieData = await fetchTMDB(`/movie/${tmdbId}`);
-             const credits = await fetchTMDB(`/movie/${tmdbId}/credits`);
-             const videos = await fetchTMDB(`/movie/${tmdbId}/videos`);
-             const releaseDates = await fetchTMDB(`/movie/${tmdbId}/release_dates`);
-             
-             if (!movieData) throw new Error('Failed to fetch movie data');
-
-             // Get additional servers
-             const serverInputs = document.querySelectorAll('#movie-servers .server-item');
-             const additionalSources = [];
-             
-             serverInputs.forEach(item => {
-                 const name = item.querySelector('.server-name').value.trim();
-                 const url = item.querySelector('.server-url').value.trim();
-                 if (name && url) {
-                     additionalSources.push({
-                         id: nextId++,
-                         type: getSourceType(url),
-                         title: name,
-                         quality: "Auto",
-                         size: "Unknown",
-                         kind: getSourceKind(url),
-                         premium: "false",
-                         external: false,
-                         url: url
-                     });
-                 }
-             });
-
-                         // Auto-generate embed sources based on configuration
-            const autoSources = generateEmbedSources(tmdbId, 'movie');
-
-             console.log('Auto-generated movie sources:', autoSources);
-             console.log('Additional sources:', additionalSources);
-
-             const movie = {
-                 id: nextId++,
-                 title: movieData.title,
-                 type: "movie",
-                 label: movieData.genres[0]?.name || "Movie",
-                 sublabel: `Released ${movieData.release_date?.substring(0, 4) || 'Unknown'}`,
-                 imdb: movieData.vote_average?.toString() || "0",
-                 downloadas: `${movieData.title.toLowerCase().replace(/\s+/g, '-')}.mp4`,
-                 comment: true,
-                 playas: "video",
-                 description: movieData.overview || "No description available",
-                 parentalRating: getMovieCertification(releaseDates),
-                 year: movieData.release_date?.substring(0, 4) || "Unknown",
-                 duration: formatDuration(movieData.runtime),
-                 rating: movieData.vote_average || 0,
-                 image: movieData.poster_path ? `${TMDB_IMAGE_BASE}${movieData.poster_path}` : null,
-                 cover: movieData.backdrop_path ? `${TMDB_IMAGE_BASE}${movieData.backdrop_path}` : null,
-                 genres: movieData.genres?.map(g => ({ id: g.id, title: g.name })) || [],
-                 sources: [...autoSources, ...additionalSources],
-                 trailer: getTrailer(videos),
-                 actors: getActors(credits),
-                 subtitles: await getSubtitles(tmdbId, 'movie'),
-                 views: Math.floor(Math.random() * 10000) + 1000,
-                 created_at: new Date().toISOString().split('T')[0]
-             };
-
-             console.log('Generated movie with sources:', movie.sources);
-
-            // Convert to Categories structure
-            const movieEntry = {
-                Title: movie.title,
-                SubCategory: movie.genres?.[0]?.title || "Action",
-                Country: "",
-                Description: movie.description,
-                Poster: movie.image,
-                Thumbnail: movie.image,
-                Rating: Math.round(movie.rating),
-                Duration: movie.duration,
-                Year: parseInt(movie.year),
-                 parentalRating: movie.parentalRating,
-                Servers: movie.sources.map(source => ({
-                    name: source.name || source.title,
-                    url: source.url
-                }))
-            };
-
-            // Add to Movies category
-            const moviesCategory = currentData.Categories.find(cat => cat.MainCategory === "Movies");
-            if (moviesCategory) {
-                // Add genre to subcategories if not exists
-                const genre = movie.genres?.[0]?.title || "Action";
-                if (!moviesCategory.SubCategories.includes(genre)) {
-                    moviesCategory.SubCategories.push(genre);
-                }
-                moviesCategory.Entries.push(movieEntry);
-                console.log(`✅ Movie '${movieEntry.Title}' added to Movies category with ${movieEntry.Servers.length} servers`);
-            } else {
-                console.error('❌ Movies category not found!');
+            const id = tmdbId || document.getElementById(`${type}-tmdb-id`).value;
+            if (!id) {
+                showStatus('warning', 'Please enter a TMDB ID');
+                return;
             }
-            
-            await saveData();
+
+            showLoading(`${type}-loading`, true);
+
+            const apiKey = getTMDBApiKey();
+            const servers = [];
+            const serverInputs = document.querySelectorAll(`#${type}-servers .server-item`);
+            serverInputs.forEach(item => {
+                const name = item.querySelector('.server-name').value.trim();
+                const url = item.querySelector('.server-url').value.trim();
+                if (name && url) {
+                    servers.push({ name, url });
+                }
+            });
+
+            const formData = new FormData();
+            formData.append('type', type);
+            formData.append('tmdb_id', id);
+            formData.append('api_key', apiKey);
+            formData.append('servers', JSON.stringify(servers));
+
+            try {
+                const response = await fetch('api_generator.php', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus('success', result.message);
+                    updateDataStats();
+                    updatePreview();
+                } else {
+                    showStatus('error', result.message);
+                }
+            } catch (error) {
+                showStatus('error', 'An error occurred while communicating with the server.');
+            } finally {
+                showLoading(`${type}-loading`, false);
+            }
         }
+
 
         // Missing Content Detection and Auto-Generation
         async function detectAndGenerateMissingContent() {
@@ -4194,156 +4091,6 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             return element;
         }
 
-        async function generateSeries(tmdbId) {
-            const seriesData = await fetchTMDB(`/tv/${tmdbId}`);
-            const credits = await fetchTMDB(`/tv/${tmdbId}/credits`);
-            const videos = await fetchTMDB(`/tv/${tmdbId}/videos`);
-            const contentRatings = await fetchTMDB(`/tv/${tmdbId}/content_ratings`);
-            
-            if (!seriesData) throw new Error('Failed to fetch series data');
-
-            // Get seasons to include
-            const seasonsInput = document.getElementById('series-seasons').value.trim();
-            const seasonsToInclude = seasonsInput ? 
-                seasonsInput.split(',').map(s => parseInt(s.trim())).filter(s => !isNaN(s)) :
-                seriesData.seasons?.map(s => s.season_number).filter(s => s > 0) || [];
-
-            // Get additional servers
-            const serverInputs = document.querySelectorAll('#series-servers .server-item');
-            const additionalServerTemplates = [];
-            
-            serverInputs.forEach(item => {
-                const name = item.querySelector('.server-name').value.trim();
-                const urlTemplate = item.querySelector('.server-url').value.trim();
-                if (name && urlTemplate) {
-                    additionalServerTemplates.push({ name, urlTemplate });
-                }
-            });
-
-            const seasons = [];
-            
-            for (const seasonNum of seasonsToInclude) {
-                const seasonData = await fetchTMDB(`/tv/${tmdbId}/season/${seasonNum}`);
-                if (!seasonData) continue;
-
-                const episodes = [];
-                
-                                 for (const episodeData of seasonData.episodes || []) {
-                     // Auto-generate embed sources based on configuration for each episode
-                     const episodeSources = generateEmbedSources(tmdbId, 'tv', seasonNum, episodeData.episode_number);
-
-                     console.log(`Auto-generated sources for S${seasonNum}E${episodeData.episode_number}:`, episodeSources);
-
-                    // Add additional sources
-                    additionalServerTemplates.forEach(server => {
-                        const url = server.urlTemplate
-                            .replace('{season}', seasonNum)
-                            .replace('{episode}', episodeData.episode_number);
-                        
-                        episodeSources.push({
-                            id: nextId++,
-                            type: getSourceType(url),
-                            title: server.name,
-                            quality: "Auto",
-                            size: "Unknown",
-                            kind: getSourceKind(url),
-                            premium: "false",
-                            external: false,
-                            url: url
-                        });
-                    });
-
-                    episodes.push({
-                        id: nextId++,
-                        episode_number: episodeData.episode_number,
-                        title: episodeData.name || `Episode ${episodeData.episode_number}`,
-                        description: episodeData.overview || "No description available",
-                        downloadas: `${seriesData.name.toLowerCase().replace(/\s+/g, '-')}-s${seasonNum}e${episodeData.episode_number}.mp4`,
-                        playas: "video",
-                        duration: formatDuration(episodeData.runtime),
-                        image: episodeData.still_path ? `${TMDB_IMAGE_BASE}${episodeData.still_path}` : null,
-                        sources: episodeSources
-                    });
-                }
-
-                seasons.push({
-                    id: seasonNum,
-                    title: seasonData.name || `Season ${seasonNum}`,
-                    episodes: episodes
-                });
-            }
-
-            const series = {
-                id: nextId++,
-                title: seriesData.name,
-                type: "series",
-                label: seriesData.genres[0]?.name || "Series",
-                sublabel: `${seasons.length} Season${seasons.length !== 1 ? 's' : ''}`,
-                imdb: seriesData.vote_average?.toString() || "0",
-                downloadas: seriesData.name.toLowerCase().replace(/\s+/g, '-'),
-                comment: true,
-                playas: "video",
-                description: seriesData.overview || "No description available",
-                 parentalRating: getTVCertification(contentRatings),
-                year: seriesData.first_air_date?.substring(0, 4) || "Unknown",
-                duration: formatDuration(seriesData.episode_run_time?.[0]),
-                rating: seriesData.vote_average || 0,
-                image: seriesData.poster_path ? `${TMDB_IMAGE_BASE}${seriesData.poster_path}` : null,
-                cover: seriesData.backdrop_path ? `${TMDB_IMAGE_BASE}${seriesData.backdrop_path}` : null,
-                genres: seriesData.genres?.map(g => ({ id: g.id, title: g.name })) || [],
-                sources: [], // Series don't have direct sources
-                trailer: getTrailer(videos),
-                actors: getActors(credits),
-                subtitles: [],
-                seasons: seasons,
-                views: Math.floor(Math.random() * 10000) + 1000,
-                created_at: new Date().toISOString().split('T')[0]
-            };
-
-            // Convert to Categories structure
-            const seriesEntry = {
-                Title: series.title,
-                SubCategory: series.genres?.[0]?.title || "Action",
-                Country: "",
-                Description: series.description,
-                Poster: series.image,
-                Thumbnail: series.image,
-                Rating: Math.round(series.rating),
-                Year: parseInt(series.year),
-                 parentalRating: series.parentalRating,
-                Seasons: seasons.map(season => ({
-                    Season: season.id,
-                    SeasonPoster: series.image,
-                    Episodes: season.episodes.map(episode => ({
-                        Episode: episode.episode_number,
-                        Title: episode.title,
-                        Duration: episode.duration || "00:45:00",
-                        Description: episode.description || "",
-                        Thumbnail: episode.image || series.image,
-                        Servers: episode.sources?.map(source => ({
-                            name: source.name || source.title,
-                            url: source.url
-                        })) || []
-                    }))
-                }))
-            };
-
-            // Add to TV Series category
-            const seriesCategory = currentData.Categories.find(cat => cat.MainCategory === "TV Series");
-            if (seriesCategory) {
-                // Add genre to subcategories if not exists
-                const genre = series.genres?.[0]?.title || "Action";
-                if (!seriesCategory.SubCategories.includes(genre)) {
-                    seriesCategory.SubCategories.push(genre);
-                }
-                seriesCategory.Entries.push(seriesEntry);
-                console.log(`✅ Series '${seriesEntry.Title}' added to TV Series category with ${seriesEntry.Seasons.length} seasons`);
-            } else {
-                console.error('❌ TV Series category not found!');
-            }
-            
-            await saveData();
-        }
 
         // Helper functions
         function getSourceType(url) {
@@ -4632,120 +4379,77 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         async function addManualContent() {
             const type = document.getElementById('manual-type').value;
             const title = document.getElementById('manual-title').value.trim();
-            const subcategory = document.getElementById('manual-subcategory').value;
-            const country = document.getElementById('manual-country').value.trim();
-            const parentalRating = document.getElementById('manual-parental-rating').value.trim();
-            
             if (!title) {
                 showStatus('warning', 'Please enter a title');
                 return;
             }
 
-            // Get servers
-            const sourceInputs = document.querySelectorAll('#manual-sources .server-item');
+            const formData = new FormData();
+            formData.append('type', type);
+            formData.append('title', title);
+            formData.append('subcategory', document.getElementById('manual-subcategory').value);
+            formData.append('country', document.getElementById('manual-country').value.trim());
+            formData.append('parental_rating', document.getElementById('manual-parental-rating').value.trim());
+            formData.append('description', document.getElementById('manual-description').value);
+            formData.append('poster', document.getElementById('manual-image').value);
+            formData.append('year', document.getElementById('manual-year').value);
+            formData.append('rating', document.getElementById('manual-rating').value);
+
             const servers = [];
-            
+            const sourceInputs = document.querySelectorAll('#manual-sources .server-item');
             sourceInputs.forEach(item => {
                 const name = item.querySelector('.source-name').value.trim();
                 const url = item.querySelector('.source-url').value.trim();
-                
                 if (name && url) {
-                    servers.push({
-                        name: name,
-                        url: url
-                    });
+                    servers.push({ name, url });
                 }
             });
+            formData.append('servers', JSON.stringify(servers));
 
-            if (servers.length === 0) {
-                showStatus('warning', 'Please add at least one server');
-                return;
-            }
-
-            // Create entry object matching JSON structure
-            const entry = {
-                Title: title,
-                SubCategory: subcategory,
-                Country: country,
-                Description: document.getElementById('manual-description').value || 'No description available',
-                Poster: document.getElementById('manual-image').value || '',
-                Thumbnail: document.getElementById('manual-image').value || '',
-                Rating: parseInt(document.getElementById('manual-rating').value) || 0,
-                parentalRating: parentalRating,
-                Servers: servers
-            };
-
-            // Add additional fields based on type
-            if (type === 'movie' || type === 'series') {
-                entry.Year = parseInt(document.getElementById('manual-year').value) || new Date().getFullYear();
-            }
-            
-            if (type === 'movie') {
-                entry.Duration = "2:00:00"; // Default duration
-            }
-            
-            if (type === 'series') {
-                entry.Seasons = []; // Will be populated when seasons are added
-            }
-
-            // Find the appropriate category and add the entry
-            let mainCategory = '';
-            if (type === 'movie') mainCategory = 'Movies';
-            else if (type === 'series') mainCategory = 'TV Series';
-            else if (type === 'live') mainCategory = 'Live TV';
-
-            const category = currentData.Categories.find(cat => cat.MainCategory === mainCategory);
-            if (category) {
-                // Add subcategory if it doesn't exist
-                if (!category.SubCategories.includes(subcategory)) {
-                    category.SubCategories.push(subcategory);
-                }
-                
-                category.Entries.push(entry);
-            } else {
-                // Create new category if it doesn't exist
-                currentData.Categories.push({
-                    MainCategory: mainCategory,
-                    SubCategories: [subcategory],
-                    Entries: [entry]
+            try {
+                const response = await fetch('manual_add.php', {
+                    method: 'POST',
+                    body: formData
                 });
+                const result = await response.json();
+                if (result.success) {
+                    showStatus('success', result.message);
+                    // Clear form
+                    document.getElementById('manual-title').value = '';
+                    document.getElementById('manual-description').value = '';
+                    document.getElementById('manual-image').value = '';
+                    document.getElementById('manual-year').value = '';
+                    document.getElementById('manual-rating').value = '';
+                    document.getElementById('manual-country').value = '';
+                    document.getElementById('manual-parental-rating').value = '';
+                    document.getElementById('manual-sources').innerHTML = `
+                        <div class="server-item">
+                            <input type="text" placeholder="Source Name" class="source-name">
+                            <input type="url" placeholder="Video URL" class="source-url">
+                            <select class="source-type">
+                                <option value="video">Direct Video</option>
+                                <option value="embed">Embedded</option>
+                                <option value="youtube">YouTube</option>
+                                <option value="live">Live Stream</option>
+                            </select>
+                            <select class="source-quality">
+                                <option value="1080p">1080p</option>
+                                <option value="720p">720p</option>
+                                <option value="480p">480p</option>
+                                <option value="Auto">Auto</option>
+                            </select>
+                            <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
+                            <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
+                        </div>
+                    `;
+                    updateDataStats();
+                    updatePreview();
+                } else {
+                    showStatus('error', result.message);
+                }
+            } catch (error) {
+                showStatus('error', 'An error occurred while communicating with the server.');
             }
-
-            await saveData();
-            updateDataStats();
-            updatePreview();
-            showStatus('success', `${title} added to ${mainCategory} successfully!`);
-            
-            // Clear form
-            document.getElementById('manual-title').value = '';
-            document.getElementById('manual-description').value = '';
-            document.getElementById('manual-image').value = '';
-            document.getElementById('manual-year').value = '';
-            document.getElementById('manual-rating').value = '';
-            document.getElementById('manual-country').value = '';
-            document.getElementById('manual-parental-rating').value = '';
-            
-            // Reset sources to one empty item
-            document.getElementById('manual-sources').innerHTML = `
-                <div class="server-item">
-                    <input type="text" placeholder="Source Name" class="source-name">
-                    <input type="url" placeholder="Video URL" class="source-url">
-                    <select class="source-type">
-                        <option value="video">Direct Video</option>
-                        <option value="embed">Embedded</option>
-                        <option value="youtube">YouTube</option>
-                        <option value="live">Live Stream</option>
-                    </select>
-                    <select class="source-quality">
-                        <option value="1080p">1080p</option>
-                        <option value="720p">720p</option>
-                        <option value="480p">480p</option>
-                        <option value="Auto">Auto</option>
-                    </select>
-                    <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
-                    <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
-                </div>
-            `;
         }
 
         // Bulk operations
@@ -4754,12 +4458,12 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             const year = document.getElementById('bulk-year').value;
             const pages = parseInt(document.getElementById('bulk-pages').value);
             const skipDuplicates = document.getElementById('bulk-skip-duplicates').checked;
-            
+
             showLoading('bulk-loading', true);
-            
+
             let generated = 0;
             let skipped = 0;
-            
+
             for (let page = 1; page <= pages; page++) {
                 const results = await fetchTMDB(`/discover/${type}`, {
                     primary_release_year: type === 'movie' ? year : undefined,
@@ -4767,16 +4471,16 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                     page: page,
                     sort_by: 'popularity.desc'
                 });
-                
+
                 if (!results?.results) break;
-                
+
                 for (const item of results.results) {
                     // Check for duplicates
                     if (skipDuplicates && isDuplicate(item.id, type)) {
                         skipped++;
                         continue;
                     }
-                    
+
                     try {
                         if (type === 'movie') {
                             await generateMovie(item.id);
@@ -4788,7 +4492,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         console.error(`Error generating ${type} ${item.id}:`, error);
                     }
                 }
-                
+
                 // Update progress
                 const progress = (page / pages) * 100;
                 document.getElementById('bulk-progress').style.width = `${progress}%`;
@@ -4797,11 +4501,11 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         Page ${page}/${pages} - Generated: ${generated}, Skipped: ${skipped}
                     </div>
                 `;
-                
+
                 // Small delay to prevent API rate limiting
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
-            
+
                          showLoading('bulk-loading', false);
              updateDataStats();
              updatePreview();
@@ -4816,7 +4520,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             
             console.log('🎬 Starting genre generation:', { genreId, count, contentType, year });
             console.log('📊 Current data structure:', currentData);
-            
+
             // Show loading and progress
             showLoading('genre-loading', true);
             document.getElementById('genre-progress').style.display = 'block';
@@ -4826,20 +4530,20 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             try {
                 let totalGenerated = 0;
                 const contentTypes = contentType === 'both' ? ['movie', 'tv'] : [contentType];
-                
+
                 for (let i = 0; i < contentTypes.length; i++) {
                     const type = contentTypes[i];
                     const endpoint = type === 'movie' ? '/discover/movie' : '/discover/tv';
-                    
+
                     // Calculate how many items we need for this content type
                     const itemsNeeded = contentType === 'both' ? Math.ceil(count / 2) : count;
                     console.log(`🎯 Need ${itemsNeeded} ${type} items`);
-                    
+
                     // Fetch multiple pages if needed to get enough results
                     let allResults = [];
                     let currentPage = 1;
                     const maxPages = Math.ceil(itemsNeeded / 20); // TMDB returns 20 items per page
-                    
+
                     while (allResults.length < itemsNeeded && currentPage <= maxPages && currentPage <= 500) {
                         // Build query parameters
                         const params = {
@@ -4847,7 +4551,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                             sort_by: 'popularity.desc',
                             page: currentPage
                         };
-                        
+
                         // Add year filter if specified
                         if (year) {
                             if (type === 'movie') {
@@ -4856,34 +4560,34 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                                 params.first_air_date_year = year;
                             }
                         }
-                        
+
                         console.log(`🔍 Fetching ${type} data from:`, endpoint, params, `(page ${currentPage})`);
                         const results = await fetchTMDB(endpoint, params);
                         console.log(`📥 Received ${type} results from page ${currentPage}:`, results?.results?.length || 0, 'items');
-                        
+
                         if (!results?.results || results.results.length === 0) {
                             console.log(`📄 No more results on page ${currentPage}, stopping pagination`);
                             break;
                         }
-                        
+
                         allResults = [...allResults, ...results.results];
                         currentPage++;
-                        
+
                         // Small delay between page requests to be nice to the API
                         await new Promise(resolve => setTimeout(resolve, 100));
                     }
-                    
+
                     if (allResults.length === 0) {
                         console.error(`❌ Failed to fetch ${type} data`);
                         showStatus('error', `Failed to fetch ${type} data from TMDB`);
                         continue;
                     }
-                    
+
                     // Take only the number of items we need
                     const itemsToProcess = allResults.slice(0, itemsNeeded);
                     console.log(`🎯 Processing ${itemsToProcess.length} ${type} items:`, itemsToProcess.map(item => item.title || item.name));
                     let generated = 0;
-                    
+
                     for (let j = 0; j < itemsToProcess.length; j++) {
                         const item = itemsToProcess[j];
                         const totalItemsToProcess = contentTypes.reduce((acc, _, idx) => {
@@ -4891,12 +4595,12 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         }, 0);
                         const currentItemIndex = i * (contentType === 'both' ? Math.ceil(count / 2) : count) + j + 1;
                         const progressPercent = (currentItemIndex / totalItemsToProcess) * 100;
-                        
+
                         // Update progress
                         document.getElementById('genre-progress-fill').style.width = `${progressPercent}%`;
-                        document.getElementById('genre-progress-text').textContent = 
+                        document.getElementById('genre-progress-text').textContent =
                             `Processing ${type === 'movie' ? 'movies' : 'TV series'}: ${j + 1}/${itemsToProcess.length}`;
-                        
+
                         try {
                             // Check for duplicate by title instead of ID
                             const itemTitle = item.title || item.name;
@@ -4915,29 +4619,29 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         } catch (error) {
                             console.error(`❌ Error generating ${type} ${item.id}:`, error);
                         }
-                        
+
                         // Small delay to prevent rate limiting
                         await new Promise(resolve => setTimeout(resolve, 100));
                     }
                 }
-                
+
                 // Complete progress
                 document.getElementById('genre-progress-fill').style.width = '100%';
                 document.getElementById('genre-progress-text').textContent = 'Complete!';
-                
+
                 console.log('🎉 Genre generation complete! Total generated:', totalGenerated);
                 console.log('📊 Final data structure:', currentData);
                 console.log('🎬 Movies count:', currentData.Categories.find(c => c.MainCategory === 'Movies')?.Entries.length || 0);
                 console.log('📺 TV Series count:', currentData.Categories.find(c => c.MainCategory === 'TV Series')?.Entries.length || 0);
-                
+
                 updateDataStats();
                 updatePreview();
-                
-                const typeText = contentType === 'both' ? 'movies and TV series' : 
+
+                const typeText = contentType === 'both' ? 'movies and TV series' :
                                 contentType === 'movie' ? 'movies' : 'TV series';
                 const yearText = year ? ` from ${year}` : '';
                 showStatus('success', `Generated ${totalGenerated} ${typeText} from selected genre${yearText}!`);
-                
+
             } catch (error) {
                 console.error('Genre generation failed:', error);
                 showStatus('error', 'Genre generation failed: ' + error.message);
@@ -4996,124 +4700,57 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         // Data management functions
         let importCancelled = false;
         let importStartTime = 0;
-        
-        function importData() {
+
+        async function importData() {
             const fileInput = document.getElementById('import-file');
             const file = fileInput.files[0];
-            
+
             if (!file) {
                 showStatus('warning', 'Please select a file to import');
                 return;
             }
-            
-            // Reset cancellation flag
-            importCancelled = false;
-            importStartTime = Date.now();
-            
-            // Show progress section and loading
-            document.getElementById('import-progress-section').style.display = 'block';
-            document.getElementById('cancel-import-btn').style.display = 'inline-block';
+
+            const formData = new FormData();
+            formData.append('jsonFile', file);
+
             showLoading('import-loading', true);
-            
-            // Update initial progress
-            updateImportProgress(0, 0, 'Reading file...', '-');
-            
-            const reader = new FileReader();
-            
-            reader.onprogress = function(e) {
-                if (e.lengthComputable && !importCancelled) {
-                    const percentLoaded = Math.round((e.loaded / e.total) * 30); // File reading is 30% of total
-                    updateImportProgress(percentLoaded, 0, `Reading file... ${Math.round(e.loaded / 1024 / 1024 * 10) / 10}MB / ${Math.round(e.total / 1024 / 1024 * 10) / 10}MB`, 'Loading file');
+
+            try {
+                const response = await fetch('import.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showStatus('success', result.message);
+                    updateDataStats();
+                    updatePreview();
+                } else {
+                    showStatus('error', result.message);
                 }
-            };
-            
-            reader.onload = function(e) {
-                if (importCancelled) return;
-                
-                try {
-                    updateImportProgress(30, 0, 'Parsing JSON data...', 'Validating');
-                    
-                    const jsonText = e.target.result;
-                    console.log('📄 File loaded, size:', (jsonText.length / 1024 / 1024).toFixed(1), 'MB');
-                    
-                    const importedData = JSON.parse(jsonText);
-                    console.log('✅ JSON parsed successfully');
-                    
-                    // Validate data structure for Categories format
-                    if (!importedData.Categories || !Array.isArray(importedData.Categories)) {
-                        console.error('❌ Invalid data structure:', {
-                            hasCategories: !!importedData.Categories,
-                            categoriesType: typeof importedData.Categories,
-                            isArray: Array.isArray(importedData.Categories),
-                            keys: Object.keys(importedData).slice(0, 10)
-                        });
-                        throw new Error(`Invalid data format - expected Categories array. Found: ${typeof importedData.Categories}`);
-                    }
-                    
-                    updateImportProgress(40, 0, 'Validating data structure...', 'Validating');
-                    console.log('📊 Found', importedData.Categories.length, 'categories');
-                    
-                    // Count total entries for progress tracking
-                    let totalEntries = 0;
-                    importedData.Categories.forEach((category, index) => {
-                        if (!category.MainCategory || !Array.isArray(category.SubCategories) || !Array.isArray(category.Entries)) {
-                            console.error(`❌ Invalid category structure at index ${index}:`, {
-                                mainCategory: category.MainCategory,
-                                hasSubCategories: !!category.SubCategories,
-                                subCategoriesType: typeof category.SubCategories,
-                                hasEntries: !!category.Entries,
-                                entriesType: typeof category.Entries
-                            });
-                            throw new Error(`Invalid category structure at index ${index}: ${category.MainCategory || 'Unknown'}`);
-                        }
-                        totalEntries += category.Entries.length;
-                        console.log(`📂 Category "${category.MainCategory}": ${category.Entries.length} entries`);
-                    });
-                    
-                    updateImportProgress(50, 0, `Found ${totalEntries.toLocaleString()} entries in ${importedData.Categories.length} categories`, 'Processing');
-                    console.log('🎯 Total entries to process:', totalEntries);
-                    
-                    // Process data with progress tracking
-                    processImportData(importedData, totalEntries);
-                    
-                } catch (error) {
-                    console.error('💥 Import error:', error);
-                    hideImportProgress();
-                    
-                    let errorMessage = error.message;
-                    if (error instanceof SyntaxError) {
-                        errorMessage = `JSON Syntax Error: ${error.message}. Check the console for details.`;
-                    }
-                    
-                    showStatus('error', `Import failed: ${errorMessage}`);
-                    showLoading('import-loading', false);
-                }
-            };
-            
-            reader.onerror = function() {
-                hideImportProgress();
-                showStatus('error', 'Failed to read file');
+            } catch (error) {
+                showStatus('error', 'An error occurred while communicating with the server.');
+            } finally {
                 showLoading('import-loading', false);
-            };
-            
-            reader.readAsText(file);
+            }
         }
         
         async function processImportData(importedData, totalEntries) {
             let processedEntries = 0;
             const batchSize = 100; // Process in batches to avoid blocking UI
             const startTime = Date.now();
-            
+
             // Update total count
             document.getElementById('import-total').textContent = totalEntries.toLocaleString();
-            
+
             try {
                 for (let catIndex = 0; catIndex < importedData.Categories.length; catIndex++) {
                     if (importCancelled) {
                         showStatus('warning', 'Import cancelled by user');
                         return;
                     }
-                    
+
                     const category = importedData.Categories[catIndex];
                     updateImportProgress(
                         50 + Math.round((processedEntries / totalEntries) * 50),
@@ -5121,28 +4758,28 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         `Processing ${category.MainCategory}...`,
                         category.MainCategory
                     );
-                    
+
                     // Process entries in batches
                     for (let i = 0; i < category.Entries.length; i += batchSize) {
                         if (importCancelled) {
                             showStatus('warning', 'Import cancelled by user');
                             return;
                         }
-                        
+
                         const batch = category.Entries.slice(i, Math.min(i + batchSize, category.Entries.length));
-                        
+
                         // Process batch (simulate processing time for large datasets)
                         await new Promise(resolve => {
                             setTimeout(() => {
                                 processedEntries += batch.length;
-                                
+
                                 // Update progress
                                 const progressPercent = 50 + Math.round((processedEntries / totalEntries) * 50);
                                 const elapsed = Date.now() - startTime;
                                 const speed = processedEntries / (elapsed / 1000);
                                 const remaining = totalEntries - processedEntries;
                                 const eta = remaining > 0 ? Math.round(remaining / speed) : 0;
-                                
+
                                 updateImportProgress(
                                     progressPercent,
                                     processedEntries,
@@ -5151,45 +4788,45 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                                     speed,
                                     eta
                                 );
-                                
+
                                 resolve();
                             }, 1); // Small delay to keep UI responsive
                         });
                     }
                 }
-                
+
                                  if (!importCancelled) {
                      try {
                          // Finalize import
                          updateImportProgress(95, processedEntries, 'Finalizing import...', 'Saving');
                          console.log('💾 Starting finalization process...');
-                         
+
                          // Step 1: Assign data
                          console.log('📝 Assigning imported data...');
                          currentData = importedData;
                          console.log('✅ Data assigned successfully');
-                         
+
                          // Step 2: Save to localStorage (this might fail with large data)
                          updateImportProgress(96, processedEntries, 'Saving to localStorage...', 'Saving');
                          console.log('💾 Saving to localStorage...');
-                         
+
                          try {
                              saveData();
                              console.log('✅ Data saved to localStorage successfully');
                          } catch (saveError) {
                              console.error('⚠️ localStorage save failed:', saveError);
                              console.log('📊 Data size:', JSON.stringify(currentData).length, 'characters');
-                             
+
                              // Try to save without localStorage for now
                              console.log('⚡ Continuing without localStorage save...');
                              showStatus('warning', 'Data imported but could not save to localStorage (data too large). Data is active in current session.');
                          }
-                         
+
                          updateImportProgress(98, processedEntries, 'Updating interface...', 'UI Update');
-                         
+
                          // Step 3: Update UI components
                          console.log('🔄 Updating UI components...');
-                         
+
                          try {
                              console.log('📊 Updating data stats...');
                              updateDataStats();
@@ -5197,7 +4834,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                          } catch (statsError) {
                              console.error('⚠️ Data stats update failed:', statsError);
                          }
-                         
+
                          try {
                              console.log('👁️ Updating preview...');
                              updatePreview();
@@ -5205,7 +4842,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                          } catch (previewError) {
                              console.error('⚠️ Preview update failed:', previewError);
                          }
-                         
+
                                                  try {
                             console.log('📋 Refreshing content checkboxes...');
                             refreshContentCheckboxes();
@@ -5213,49 +4850,49 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         } catch (dropdownError) {
                             console.error('⚠️ Checkbox refresh failed:', dropdownError);
                         }
-                         
+
                          updateImportProgress(100, processedEntries, 'Import completed successfully!', 'Complete');
                          console.log('✨ Import process completed successfully!');
-                         
+
                          // Hide progress after a short delay
                          setTimeout(() => {
                              hideImportProgress();
                              showStatus('success', `Successfully imported ${processedEntries.toLocaleString()} entries from ${importedData.Categories.length} categories!`);
                          }, 2000);
-                         
+
                      } catch (finalizationError) {
                          console.error('💥 Finalization error:', finalizationError);
                          hideImportProgress();
                          showStatus('error', `Import data processed but finalization failed: ${finalizationError.message}. Check console for details.`);
                      }
                  }
-                
+
             } catch (error) {
                 hideImportProgress();
                 showStatus('error', `Import processing failed: ${error.message}`);
             }
-            
+
             showLoading('import-loading', false);
         }
-        
+
         function updateImportProgress(percent, processed, message, category, speed = 0, eta = 0) {
             // Update progress bar
             document.getElementById('import-progress-fill').style.width = `${percent}%`;
-            
+
             // Update progress text
             document.getElementById('import-progress-text').textContent = `${percent}% - ${message}`;
-            
+
             // Update stats
             document.getElementById('import-processed').textContent = processed.toLocaleString();
             document.getElementById('import-current-category').textContent = category;
-            
+
             if (speed > 0) {
                 document.getElementById('import-speed').textContent = Math.round(speed);
-                
+
                 if (eta > 0) {
                     const minutes = Math.floor(eta / 60);
                     const seconds = eta % 60;
-                    document.getElementById('import-eta').textContent = 
+                    document.getElementById('import-eta').textContent =
                         minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
                 } else {
                     document.getElementById('import-eta').textContent = 'Almost done!';
@@ -5272,60 +4909,60 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             document.getElementById('import-progress-section').style.display = 'none';
             document.getElementById('cancel-import-btn').style.display = 'none';
         }
-        
+
         // Chunked Import - Alternative approach for large files
         function importDataChunked() {
             const fileInput = document.getElementById('import-file');
             const file = fileInput.files[0];
-            
+
             if (!file) {
                 showStatus('warning', 'Please select a file to import');
                 return;
             }
-            
+
             // Reset cancellation flag
             importCancelled = false;
             importStartTime = Date.now();
-            
+
             // Show progress section and loading
             document.getElementById('import-progress-section').style.display = 'block';
             document.getElementById('cancel-import-btn').style.display = 'inline-block';
             showLoading('import-chunked-loading', true);
-            
+
             // Update initial progress
             updateImportProgress(0, 0, 'Reading file for chunked processing...', 'Loading');
-            
+
             const reader = new FileReader();
-            
+
             reader.onprogress = function(e) {
                 if (e.lengthComputable && !importCancelled) {
                     const percentLoaded = Math.round((e.loaded / e.total) * 20); // File reading is 20% of total
                     updateImportProgress(percentLoaded, 0, `Reading file... ${Math.round(e.loaded / 1024 / 1024 * 10) / 10}MB / ${Math.round(e.total / 1024 / 1024 * 10) / 10}MB`, 'Loading file');
                 }
             };
-            
+
             reader.onload = function(e) {
                 if (importCancelled) return;
-                
+
                 try {
                     updateImportProgress(20, 0, 'Parsing JSON data...', 'Parsing');
-                    
+
                     const jsonText = e.target.result;
                     console.log('📄 File loaded for chunked processing, size:', (jsonText.length / 1024 / 1024).toFixed(1), 'MB');
-                    
+
                     const importedData = JSON.parse(jsonText);
                     console.log('✅ JSON parsed successfully for chunked import');
-                    
+
                     // Validate data structure
                     if (!importedData.Categories || !Array.isArray(importedData.Categories)) {
                         throw new Error(`Invalid data format - expected Categories array. Found: ${typeof importedData.Categories}`);
                     }
-                    
+
                     updateImportProgress(30, 0, 'Preparing chunked processing...', 'Preparing');
-                    
+
                     // Process with chunked approach
                     processImportDataChunked(importedData);
-                    
+
                 } catch (error) {
                     console.error('💥 Chunked import error:', error);
                     hideImportProgress();
@@ -5333,31 +4970,31 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                     showLoading('import-chunked-loading', false);
                 }
             };
-            
+
             reader.onerror = function() {
                 hideImportProgress();
                 showStatus('error', 'Failed to read file');
                 showLoading('import-chunked-loading', false);
             };
-            
+
             reader.readAsText(file);
         }
-        
+
         async function processImportDataChunked(importedData) {
             console.log('🔄 Starting chunked processing...');
-            
+
             try {
                 // Count total entries
                 let totalEntries = 0;
                 importedData.Categories.forEach(category => {
                     totalEntries += category.Entries.length;
                 });
-                
+
                 console.log(`📊 Total entries to process: ${totalEntries.toLocaleString()}`);
                 document.getElementById('import-total').textContent = totalEntries.toLocaleString();
-                
+
                 updateImportProgress(35, 0, `Processing ${totalEntries.toLocaleString()} entries in chunks...`, 'Processing');
-                
+
                 // Initialize empty structure
                 const newData = {
                     Categories: importedData.Categories.map(cat => ({
@@ -5366,46 +5003,46 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         Entries: []
                     }))
                 };
-                
+
                 let processedEntries = 0;
                 const chunkSize = 50; // Much smaller chunks to prevent crashes
                 const startTime = Date.now();
-                
+
                 // Process each category
                 for (let catIndex = 0; catIndex < importedData.Categories.length; catIndex++) {
                     if (importCancelled) {
                         showStatus('warning', 'Chunked import cancelled by user');
                         return;
                     }
-                    
+
                     const category = importedData.Categories[catIndex];
                     const targetCategory = newData.Categories[catIndex];
-                    
+
                     console.log(`📂 Processing category: ${category.MainCategory} (${category.Entries.length} entries)`);
-                    
+
                     // Process entries in very small chunks
                     for (let i = 0; i < category.Entries.length; i += chunkSize) {
                         if (importCancelled) {
                             showStatus('warning', 'Chunked import cancelled by user');
                             return;
                         }
-                        
+
                         const chunk = category.Entries.slice(i, Math.min(i + chunkSize, category.Entries.length));
-                        
+
                         // Process chunk with longer delay to prevent crashes
                         await new Promise(resolve => {
                             setTimeout(() => {
                                 // Add entries to target category
                                 targetCategory.Entries.push(...chunk);
                                 processedEntries += chunk.length;
-                                
+
                                 // Update progress
                                 const progressPercent = 35 + Math.round((processedEntries / totalEntries) * 60); // 35-95%
                                 const elapsed = Date.now() - startTime;
                                 const speed = processedEntries / (elapsed / 1000);
                                 const remaining = totalEntries - processedEntries;
                                 const eta = remaining > 0 ? Math.round(remaining / speed) : 0;
-                                
+
                                 updateImportProgress(
                                     progressPercent,
                                     processedEntries,
@@ -5414,42 +5051,42 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                                     speed,
                                     eta
                                 );
-                                
+
                                 console.log(`✅ Processed chunk: ${processedEntries}/${totalEntries} entries`);
                                 resolve();
                             }, 10); // Longer delay to prevent crashes
                         });
-                        
+
                         // Additional safety: Force garbage collection hint
                         if (processedEntries % 200 === 0) {
                             await new Promise(resolve => setTimeout(resolve, 50));
                         }
                     }
                 }
-                
+
                 if (!importCancelled) {
                     console.log('🎯 All entries processed, finalizing...');
                     await finalizeChunkedImport(newData, processedEntries);
                 }
-                
+
             } catch (error) {
                 console.error('💥 Chunked processing error:', error);
                 hideImportProgress();
                 showStatus('error', `Chunked processing failed: ${error.message}`);
             }
-            
+
             showLoading('import-chunked-loading', false);
         }
-        
+
         async function finalizeChunkedImport(newData, processedEntries) {
             try {
                 updateImportProgress(95, processedEntries, 'Finalizing chunked import...', 'Finalizing');
                 console.log('💾 Starting chunked import finalization...');
-                
+
                 // Assign data
                 currentData = newData;
                 console.log('✅ Data assigned successfully');
-                
+
                 // Try to save (might fail due to size)
                 updateImportProgress(96, processedEntries, 'Attempting to save...', 'Saving');
                 try {
@@ -5459,10 +5096,10 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                     console.warn('⚠️ Could not save to localStorage:', saveError.message);
                     showStatus('warning', 'Data imported successfully but too large for browser storage. Will work in current session only.');
                 }
-                
+
                 // Update UI components safely
                 updateImportProgress(98, processedEntries, 'Updating interface...', 'UI Update');
-                
+
                 await new Promise(resolve => {
                     setTimeout(() => {
                         try {
@@ -5474,7 +5111,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         resolve();
                     }, 100);
                 });
-                
+
                 await new Promise(resolve => {
                     setTimeout(() => {
                         try {
@@ -5491,7 +5128,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         resolve();
                     }, 100);
                 });
-                
+
                 await new Promise(resolve => {
                     setTimeout(() => {
                         try {
@@ -5503,15 +5140,15 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         resolve();
                     }, 100);
                 });
-                
+
                 updateImportProgress(100, processedEntries, 'Chunked import completed!', 'Complete');
                 console.log('🎉 Chunked import completed successfully!');
-                
+
                 setTimeout(() => {
                     hideImportProgress();
                     showStatus('success', `🚀 Successfully imported ${processedEntries.toLocaleString()} entries using chunked processing! Data is ready to use.`);
                 }, 2000);
-                
+
             } catch (error) {
                 console.error('💥 Chunked finalization error:', error);
                 hideImportProgress();
@@ -5519,69 +5156,8 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
             }
         }
 
-                                 function exportData() {
-            try {
-                // Export the Categories structure directly
-                const dataStr = JSON.stringify(currentData, null, 2);
-                const dataSizeMB = (dataStr.length / 1024 / 1024).toFixed(2);
-                
-                console.log(`📤 Exporting ${dataSizeMB}MB of data`);
-                
-                // For large data, use chunked download approach
-                if (dataStr.length > 50 * 1024 * 1024) { // > 50MB
-                    showStatus('info', `Preparing large export (${dataSizeMB}MB)...`);
-                    exportLargeData(dataStr);
-                    return;
-                }
-                
-                // Standard export for smaller data
-                const dataBlob = new Blob([dataStr], { type: 'application/json' });
-                
-                // Check if blob was created successfully
-                if (!dataBlob || dataBlob.size === 0) {
-                    throw new Error('Failed to create export file blob');
-                }
-                
-                const link = document.createElement('a');
-                const url = URL.createObjectURL(dataBlob);
-                
-                if (!url) {
-                    throw new Error('Failed to create download URL');
-                }
-                
-                link.href = url;
-                link.download = `playlist-${new Date().toISOString().split('T')[0]}.json`;
-                
-                // Add link to document temporarily to ensure it works
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                
-                // Clean up the object URL after download
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 1000);
-                
-                showStatus('success', `Data exported successfully! File size: ${dataSizeMB}MB`);
-                
-            } catch (error) {
-                console.error('Export error:', error);
-                showStatus('error', `Export failed: ${error.message}`);
-                
-                // Fallback: try to copy to clipboard for large data
-                if (error.message.includes('large') || error.message.includes('blob')) {
-                    try {
-                        const dataStr = JSON.stringify(currentData, null, 2);
-                        navigator.clipboard.writeText(dataStr).then(() => {
-                            showStatus('warning', 'Export failed, but data copied to clipboard. Paste into a text file and save as .json');
-                        }).catch(() => {
-                            showStatus('error', 'Export failed and clipboard unavailable. Try using GitHub upload instead.');
-                        });
-                    } catch (clipboardError) {
-                        showStatus('error', 'Export failed. Try using GitHub upload for large datasets.');
-                    }
-                }
-            }
+        function exportData() {
+            window.location.href = 'export.php';
         }
         
         // Handle large data exports with chunked approach
@@ -5768,7 +5344,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                             Entries: []
                         },
                         {
-                            MainCategory: "Movies", 
+                            MainCategory: "Movies",
                             SubCategories: ["Action", "Comedy", "Drama", "Horror", "Sci-Fi"],
                             Entries: []
                         },
@@ -5779,7 +5355,7 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                         }
                     ]
                 };
-                
+
                 await saveData();
                 updateDataStats();
                 updatePreview();
@@ -5790,11 +5366,11 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
         async function removeDuplicates() {
             let originalCount = 0;
             let removedCount = 0;
-            
+
             // Remove duplicates from each category
             currentData.Categories.forEach(category => {
                 originalCount += category.Entries.length;
-                
+
                 const seen = new Set();
                 const originalEntries = [...category.Entries];
                 category.Entries = category.Entries.filter(entry => {
@@ -5805,10 +5381,10 @@ const TWOTWOEMBED_BASE = 'https://2embed.cc/embed';
                     seen.add(key);
                     return true;
                 });
-                
+
                 removedCount += originalEntries.length - category.Entries.length;
             });
-            
+
             await saveData();
             updateDataStats();
             updatePreview();
@@ -5951,227 +5527,148 @@ Proceed with removal?`;
         }
 
         // Preview and management functions
-        function updatePreview() {
+        async function updatePreview() {
             const filter = document.getElementById('preview-filter')?.value || 'all';
             const searchTerm = document.getElementById('preview-search')?.value.toLowerCase() || '';
             const container = document.getElementById('content-preview');
             
             if (!container) return;
-            
-            let allItems = [];
-            
-            // Collect items from all categories based on filter
-            currentData.Categories.forEach(category => {
-                category.Entries.forEach(entry => {
-                    let itemType = '';
-                    if (category.MainCategory === "Movies") itemType = 'movie';
-                    else if (category.MainCategory === "TV Series") itemType = 'series';
-                    else if (category.MainCategory === "Live TV") itemType = 'live';
-                    
-                    const typeMatch = (filter === 'all' || filter === itemType);
-                    const searchMatch = (entry.Title.toLowerCase().includes(searchTerm));
 
-                    if (typeMatch && searchMatch) {
-                        allItems.push({
-                            ...entry,
-                            type: itemType,
-                            category: category.MainCategory,
-                            image: entry.Poster || entry.Thumbnail,
-                            title: entry.Title,
-                            description: entry.Description,
-                            year: entry.Year,
-                            rating: entry.Rating,
-                            sources: entry.Servers || []
-                        });
-                    }
-                });
-            });
+            const response = await fetch(`get_content.php?type=${filter}&search=${searchTerm}&page=${currentPage}`);
+            const data = await response.json();
 
-            const totalPages = Math.ceil(allItems.length / itemsPerPage);
-            currentPage = Math.max(1, Math.min(currentPage, totalPages));
+            if (data.success) {
+                container.innerHTML = '';
+                const fragment = document.createDocumentFragment();
 
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = startIndex + itemsPerPage;
-            const itemsToRender = allItems.slice(startIndex, endIndex);
+                data.content.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'preview-item';
 
-            container.innerHTML = '';
-            const fragment = document.createDocumentFragment();
-
-            itemsToRender.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'preview-item';
-                
-                div.innerHTML = `
-                    <img src="${item.image || 'https://via.placeholder.com/300x450?text=No+Image'}" 
-                         alt="${item.title}" loading="lazy">
-                    <div class="info">
-                        <div class="title">${item.title}</div>
-                        <div class="meta">${item.year || 'Unknown'} • ${item.parentalRating || 'N/A'} • ${item.type?.toUpperCase()} • Rating: ${item.rating || 'N/A'}</div>
-                        <div class="meta">Category: ${item.category} • SubCategory: ${item.SubCategory || 'N/A'}</div>
-                        <div class="meta">Servers: ${item.sources?.length || 0}</div>
-                        <div style="margin-top: 10px;">
-                            <button class="btn btn-secondary btn-small" onclick="editContent('${item.Title}', '${item.category}')">Edit</button>
-                            <button class="btn btn-warning btn-small" onclick="addServerToContent('${item.Title}', '${item.category}')">Add Server</button>
-                            <button class="btn btn-danger btn-small" onclick="deleteContent('${item.Title}', '${item.category}')">Delete</button>
-                        </div>
-                    </div>
-                `;
-                
-                fragment.appendChild(div);
-            });
-
-            container.appendChild(fragment);
-
-            // Update pagination controls
-            document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages || 1}`;
-            document.getElementById('prev-page').disabled = currentPage === 1;
-            document.getElementById('next-page').disabled = currentPage === totalPages || totalPages === 0;
-        }
-
-        function editContent(title, category) {
-            // Find the content
-            let content = null;
-            let foundCategory = null;
-            
-            currentData.Categories.forEach(cat => {
-                if (cat.MainCategory === category) {
-                    const entry = cat.Entries.find(e => e.Title === title);
-                    if (entry) {
-                        content = entry;
-                        foundCategory = cat;
-                    }
-                }
-            });
-            
-            if (!content) {
-                showStatus('error', 'Content not found');
-                return;
-            }
-            
-            // Show edit modal (simplified version)
-            const modal = document.getElementById('edit-modal');
-            if (!modal) {
-                // Create modal if it doesn't exist
-                const modalHTML = `
-                    <div id="edit-modal" class="modal">
-                        <div class="modal-content">
-                            <span class="close" onclick="closeEditModal()">&times;</span>
-                            <h2>Edit Content</h2>
-                            <div id="edit-form"></div>
-                            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                                <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
-                                <button class="btn btn-secondary" onclick="exportData()">💾 Export as Backup</button>
+                    div.innerHTML = `
+                        <img src="${item.poster || 'https://via.placeholder.com/300x450?text=No+Image'}"
+                             alt="${item.title}" loading="lazy">
+                        <div class="info">
+                            <div class="title">${item.title}</div>
+                            <div class="meta">${item.year || 'Unknown'} • ${item.parental_rating || 'N/A'} • ${item.type?.toUpperCase()} • Rating: ${item.rating || 'N/A'}</div>
+                            <div class="meta">Genre: ${item.genre_name || 'N/A'}</div>
+                            <div style="margin-top: 10px;">
+                                <button class="btn btn-secondary btn-small" onclick="editContent(${item.id})">Edit</button>
+                                <button class="btn btn-danger btn-small" onclick="deleteContent(${item.id}, '${item.title}')">Delete</button>
                             </div>
                         </div>
-                    </div>
-                `;
-                document.body.insertAdjacentHTML('beforeend', modalHTML);
-            }
-            
-            const form = document.getElementById('edit-form');
-            
-            // Build servers HTML
-            let serversHTML = '';
-            if (content.Servers && content.Servers.length > 0) {
-                content.Servers.forEach((server, index) => {
-                    serversHTML += `
-                        <div class="server-item">
-                            <input type="text" placeholder="Server Name" class="edit-server-name" value="${server.name || ''}">
-                            <input type="url" placeholder="Video URL" class="edit-server-url" value="${server.url || ''}">
-                            <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
-                            <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
-                        </div>
                     `;
+
+                    fragment.appendChild(div);
                 });
+
+                container.appendChild(fragment);
+
+                // Update pagination controls
+                const { page, total_pages } = data.pagination;
+                currentPage = page;
+                document.getElementById('page-info').textContent = `Page ${page} of ${total_pages || 1}`;
+                document.getElementById('prev-page').disabled = page === 1;
+                document.getElementById('next-page').disabled = page === total_pages || total_pages === 0;
             } else {
-                serversHTML = `
-                    <div class="server-item">
-                        <input type="text" placeholder="Server Name" class="edit-server-name">
-                        <input type="url" placeholder="Video URL" class="edit-server-url">
-                        <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
-                        <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
-                    </div>
-                `;
+                showStatus('error', data.message);
             }
-            
-            // Build seasons HTML for TV Series
-            let seasonsHTML = '';
-            if (content.Seasons && content.Seasons.length > 0) {
-                content.Seasons.forEach((season, seasonIndex) => {
-                    seasonsHTML += `
-                        <div class="season-group">
-                            <h4>Season ${season.Season}</h4>
-                            ${season.Episodes.map((episode, episodeIndex) => `
-                                <div class="episode-group">
-                                    <h5>Episode ${episode.Episode}: ${episode.Title}</h5>
-                                    <div class="episode-servers">
-                                        ${episode.Servers && episode.Servers.length > 0 ? 
-                                            episode.Servers.map(server => `
-                                                <div class="server-item">
-                                                    <input type="text" placeholder="Server Name" class="edit-episode-server-name" value="${server.name || ''}" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                                                    <input type="url" placeholder="Video URL" class="edit-episode-server-url" value="${server.url || ''}" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                                                    <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
-                                                    <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
-                                                </div>
-                                            `).join('') : 
-                                            `<div class="server-item">
-                                                <input type="text" placeholder="Server Name" class="edit-episode-server-name" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                                                <input type="url" placeholder="Video URL" class="edit-episode-server-url" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                                                <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
-                                                <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
-                                            </div>`
-                                        }
-                                        <button class="btn btn-secondary btn-small" onclick="addEpisodeServer(${seasonIndex}, ${episodeIndex})">+ Add Server</button>
-                                        <button class="btn btn-warning btn-small" onclick="addServerToEpisode('${content.Title}', ${seasonIndex}, ${episodeIndex})">Quick Add</button>
-                                    </div>
+        }
+
+        async function editContent(id) {
+            const response = await fetch(`get_content_details.php?id=${id}`);
+            const data = await response.json();
+
+            if (data.success) {
+                const content = data.content;
+                const modal = document.getElementById('edit-modal');
+                if (!modal) {
+                    // Create modal if it doesn't exist
+                    const modalHTML = `
+                        <div id="edit-modal" class="modal">
+                            <div class="modal-content">
+                                <span class="close" onclick="closeEditModal()">&times;</span>
+                                <h2>Edit Content</h2>
+                                <div id="edit-form"></div>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <button class="btn btn-primary" onclick="saveEdit(${id}, '${content.type}')">Save Changes</button>
                                 </div>
-                            `).join('')}
+                            </div>
                         </div>
                     `;
-                });
+                    document.body.insertAdjacentHTML('beforeend', modalHTML);
+                }
+
+                const form = document.getElementById('edit-form');
+                let serversHTML = '';
+                if (content.type !== 'series') {
+                    content.servers.forEach(server => {
+                        serversHTML += `
+                            <div class="server-item">
+                                <input type="text" placeholder="Server Name" class="edit-server-name" value="${server.name || ''}">
+                                <input type="url" placeholder="Video URL" class="edit-server-url" value="${server.url || ''}">
+                                <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
+                            </div>
+                        `;
+                    });
+                }
+
+                let seasonsHTML = '';
+                if (content.type === 'series') {
+                    content.seasons.forEach((season, seasonIndex) => {
+                        seasonsHTML += `<div class="season-group"><h4>Season ${season.season_number}</h4>`;
+                        season.episodes.forEach((episode, episodeIndex) => {
+                            seasonsHTML += `<div class="episode-group" data-episode-id="${episode.id}"><h5>Episode ${episode.episode_number}: ${episode.title}</h5><div class="episode-servers">`;
+                            // Here you would fetch servers for each episode and display them
+                            seasonsHTML += `</div><button class="btn btn-secondary btn-small" onclick="addEpisodeServerField(this, ${episode.id})">+ Add Server</button></div>`;
+                        });
+                        seasonsHTML += `</div>`;
+                    });
+                }
+
+                form.innerHTML = `
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="edit-title" value="${content.title}">
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="edit-description" rows="4">${content.description || ''}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Poster URL</label>
+                        <input type="text" id="edit-poster" value="${content.poster || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Year</label>
+                        <input type="text" id="edit-year" value="${content.year || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Rating</label>
+                        <input type="number" id="edit-rating" min="0" max="10" step="0.1" value="${content.rating || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Parental Rating</label>
+                        <input type="text" id="edit-parental-rating" value="${content.parental_rating || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>Country</label>
+                        <input type="text" id="edit-country" value="${content.country || ''}">
+                    </div>
+                    ${content.type !== 'series' ? `
+                    <div class="form-group">
+                        <label>Servers</label>
+                        <div id="edit-servers" class="server-list">
+                            ${serversHTML}
+                        </div>
+                        <button class="btn btn-secondary btn-small" onclick="addEditServer()">+ Add Server</button>
+                    </div>` : ''}
+                    ${seasonsHTML}
+                `;
+                document.getElementById('edit-modal').style.display = 'block';
+            } else {
+                showStatus('error', data.message);
             }
-            
-            form.innerHTML = `
-                <div class="form-group">
-                    <label>Title</label>
-                    <input type="text" id="edit-title" value="${content.Title}">
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea id="edit-description" rows="4">${content.Description || ''}</textarea>
-                </div>
-                <div class="form-group">
-                    <label>Year</label>
-                    <input type="text" id="edit-year" value="${content.Year || ''}">
-                </div>
-                <div class="form-group">
-                    <label>Rating</label>
-                    <input type="number" id="edit-rating" min="0" max="10" step="0.1" value="${content.Rating || ''}">
-                </div>
-                <div class="form-group">
-                    <label>Parental Rating</label>
-                    <input type="text" id="edit-parental-rating" placeholder="e.g., PG-13" value="${content.parentalRating || ''}">
-                </div>
-                <div class="form-group">
-                    <label>Servers</label>
-                    <div id="edit-servers" class="server-list">
-                        ${serversHTML}
-                    </div>
-                    <button class="btn btn-secondary btn-small" onclick="addEditServer()">+ Add Server</button>
-                </div>
-                ${content.Seasons ? `
-                <div class="form-group">
-                    <label>Seasons & Episodes</label>
-                    <div id="edit-seasons">
-                        ${seasonsHTML}
-                    </div>
-                </div>
-                ` : ''}
-                <input type="hidden" id="edit-original-title" value="${title}">
-                <input type="hidden" id="edit-category" value="${category}">
-            `;
-            
-            document.getElementById('edit-modal').style.display = 'block';
         }
 
         function closeEditModal() {
@@ -6185,108 +5682,98 @@ Proceed with removal?`;
             serverItem.innerHTML = `
                 <input type="text" placeholder="Server Name" class="edit-server-name">
                 <input type="url" placeholder="Video URL" class="edit-server-url">
-                <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
                 <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
             `;
             container.appendChild(serverItem);
         }
 
-        function addEpisodeServer(seasonIndex, episodeIndex) {
-            const episodeGroup = document.querySelector(`[data-season="${seasonIndex}"][data-episode="${episodeIndex}"]`).closest('.episode-group');
-            const serversContainer = episodeGroup.querySelector('.episode-servers');
-            
+        function addEpisodeServerField(button, episodeId) {
+            const container = button.previousElementSibling;
             const serverItem = document.createElement('div');
             serverItem.className = 'server-item';
             serverItem.innerHTML = `
-                <input type="text" placeholder="Server Name" class="edit-episode-server-name" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                <input type="url" placeholder="Video URL" class="edit-episode-server-url" data-season="${seasonIndex}" data-episode="${episodeIndex}">
-                <button class="paste-btn" onclick="pasteFromClipboard(this)">📋 Paste</button>
+                <input type="text" placeholder="Server Name" class="edit-episode-server-name" data-episode-id="${episodeId}">
+                <input type="url" placeholder="Video URL" class="edit-episode-server-url" data-episode-id="${episodeId}">
                 <button class="btn btn-danger btn-small" onclick="removeServer(this)">Remove</button>
             `;
-            serversContainer.appendChild(serverItem);
+            container.appendChild(serverItem);
         }
 
-        async function saveEdit() {
-            const originalTitle = document.getElementById('edit-original-title').value;
-            const category = document.getElementById('edit-category').value;
-            const newTitle = document.getElementById('edit-title').value;
-            const description = document.getElementById('edit-description').value;
-            const year = document.getElementById('edit-year').value;
-            const rating = parseInt(document.getElementById('edit-rating').value);
-            const parentalRating = document.getElementById('edit-parental-rating').value;
-            
-            // Find and update content
-            currentData.Categories.forEach(cat => {
-                if (cat.MainCategory === category) {
-                    const entry = cat.Entries.find(e => e.Title === originalTitle);
-                    if (entry) {
-                        entry.Title = newTitle;
-                        entry.Description = description;
-                        if (year) entry.Year = parseInt(year);
-                        entry.Rating = rating;
-                        entry.parentalRating = parentalRating;
-                        
-                        // Update servers
-                        const serverInputs = document.querySelectorAll('#edit-servers .server-item');
-                        const servers = [];
-                        serverInputs.forEach(item => {
-                            const name = item.querySelector('.edit-server-name').value.trim();
-                            const url = item.querySelector('.edit-server-url').value.trim();
+        async function saveEdit(id, type) {
+            const formData = new FormData();
+            formData.append('id', id);
+            formData.append('title', document.getElementById('edit-title').value);
+            formData.append('description', document.getElementById('edit-description').value);
+            formData.append('poster', document.getElementById('edit-poster').value);
+            formData.append('year', document.getElementById('edit-year').value);
+            formData.append('rating', document.getElementById('edit-rating').value);
+            formData.append('parental_rating', document.getElementById('edit-parental-rating').value);
+            formData.append('country', document.getElementById('edit-country').value);
+
+            if (type !== 'series') {
+                const servers = [];
+                const serverInputs = document.querySelectorAll('#edit-servers .server-item');
+                serverInputs.forEach(item => {
+                    const name = item.querySelector('.edit-server-name').value.trim();
+                    const url = item.querySelector('.edit-server-url').value.trim();
+                    if (name && url) {
+                        servers.push({ name, url });
+                    }
+                });
+                formData.append('servers', JSON.stringify(servers));
+            } else {
+                const seasons = [];
+                document.querySelectorAll('.season-group').forEach(seasonEl => {
+                    const seasonData = { episodes: [] };
+                    seasonEl.querySelectorAll('.episode-group').forEach(episodeEl => {
+                        const episodeId = episodeEl.dataset.episodeId;
+                        const episodeServers = [];
+                        episodeEl.querySelectorAll('.server-item').forEach(serverEl => {
+                            const name = serverEl.querySelector('.edit-episode-server-name').value.trim();
+                            const url = serverEl.querySelector('.edit-episode-server-url').value.trim();
                             if (name && url) {
-                                servers.push({ name, url });
+                                episodeServers.push({ name, url });
                             }
                         });
-                        entry.Servers = dedupeServers([...(entry.Servers || []), ...servers]);
-                        
-                        // Update episode servers for TV Series
-                        if (entry.Seasons) {
-                            entry.Seasons.forEach((season, seasonIndex) => {
-                                season.Episodes.forEach((episode, episodeIndex) => {
-                                    const episodeServers = [];
-                                    const episodeServerInputs = document.querySelectorAll(`.edit-episode-server-name[data-season="${seasonIndex}"][data-episode="${episodeIndex}"]`);
-                                    
-                                    episodeServerInputs.forEach(input => {
-                                        const serverItem = input.closest('.server-item');
-                                        const name = input.value.trim();
-                                        const url = serverItem.querySelector('.edit-episode-server-url').value.trim();
-                                        if (name && url) {
-                                            episodeServers.push({ name, url });
-                                        }
-                                    });
-                                    
-                                    episode.Servers = dedupeServers([...(episode.Servers || []), ...episodeServers]);
-                                });
-                            });
-                        }
-                    }
-                }
+                        seasonData.episodes.push({ id: episodeId, servers: episodeServers });
+                    });
+                    seasons.push(seasonData);
+                });
+                formData.append('seasons', JSON.stringify(seasons));
+            }
+
+            const response = await fetch('edit_content.php', {
+                method: 'POST',
+                body: formData
             });
-            
-            try {
-                await saveData();
-                updatePreview();
+
+            const result = await response.json();
+            if (result.success) {
+                showStatus('success', result.message);
                 closeEditModal();
-                showStatus('success', 'Content updated successfully with server changes!');
-            } catch (error) {
-                console.error('Save failed:', error);
-                showStatus('error', 'Failed to save changes: ' + error.message + '. Your changes are preserved in memory but not saved to storage.');
-                // Keep the modal open so user can try again or export data
+                updatePreview();
+            } else {
+                showStatus('error', result.message);
             }
         }
 
-        function deleteContent(title, category) {
+        async function deleteContent(id, title) {
             if (confirm(`Are you sure you want to delete "${title}"?`)) {
-                // Remove from the appropriate category
-                currentData.Categories.forEach(cat => {
-                    if (cat.MainCategory === category) {
-                        cat.Entries = cat.Entries.filter(entry => entry.Title !== title);
-                    }
+                const formData = new FormData();
+                formData.append('id', id);
+
+                const response = await fetch('delete_content.php', {
+                    method: 'POST',
+                    body: formData
                 });
-                
-                saveData();
-                updateDataStats();
-                updatePreview();
-                showStatus('success', 'Content deleted successfully!');
+
+                const result = await response.json();
+                if (result.success) {
+                    showStatus('success', result.message);
+                    updatePreview();
+                } else {
+                    showStatus('error', result.message);
+                }
             }
         }
 
@@ -6469,7 +5956,7 @@ Proceed with removal?`;
             let movieCount = 0;
             let seriesCount = 0;
             let channelCount = 0;
-            
+
             // Count entries in each category
             currentData.Categories.forEach(category => {
                 if (category.MainCategory === "Movies") {
@@ -6480,28 +5967,28 @@ Proceed with removal?`;
                     channelCount += category.Entries.length;
                 }
             });
-            
+
             // Calculate data size
             const dataString = JSON.stringify(currentData);
             const dataSizeKB = (dataString.length / 1024).toFixed(1);
             const dataSizeMB = (dataString.length / 1024 / 1024).toFixed(2);
             const displaySize = dataSizeKB > 1024 ? `${dataSizeMB} MB` : `${dataSizeKB} KB`;
-            
+
             // Update display
             if (document.getElementById('movie-count')) {
                 document.getElementById('movie-count').textContent = movieCount;
                 document.getElementById('series-count').textContent = seriesCount;
                 document.getElementById('channel-count').textContent = channelCount;
                 document.getElementById('total-count').textContent = movieCount + seriesCount + channelCount;
-                
+
                 // Update storage info
                 if (document.getElementById('storage-type')) {
                     document.getElementById('storage-type').textContent = useIndexedDB ? 'IndexedDB' : 'localStorage';
                     document.getElementById('data-size').textContent = displaySize;
-                    
+
                     const isCompressed = localStorage.getItem('playlist-data-compressed') === 'true';
                     document.getElementById('compression-status').textContent = isCompressed ? 'Enabled' : 'None';
-                    
+
                     // Update storage info styling based on size
                     const storageInfo = document.getElementById('storage-info');
                     if (dataSizeKB > 5120) { // > 5MB

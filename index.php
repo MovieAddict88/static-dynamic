@@ -3363,7 +3363,7 @@
         let totalPages = 0;
         let isFetching = false;
         let isInitialLoad = true; // Flag for initial content shuffle
-        
+
         // DOM Elements
         const elements = {
             header: document.querySelector('header'),
@@ -3449,7 +3449,7 @@
             cancelPinEntryBtn: document.getElementById('cancel-pin-entry-btn'),
             okPinEntryBtn: document.getElementById('ok-pin-entry-btn')
         };
-        
+
         // State
         let currentView = 'grid';
         let currentContentInfo = {}; // To store current viewed content info for save/like
@@ -3473,7 +3473,7 @@
         let pinEntryCallback = null; // To store what to do after successful PIN entry
         let isSettingPin = false;
         let tempPin = '';
-        
+
         // Function to shuffle an array
         function shuffleArray(array) {
             for (let i = array.length - 1; i > 0; i--) {
@@ -3482,7 +3482,7 @@
             }
             return array;
         }
-        
+
         // Sort content based on criteria
         function sortContent(content, criteria) {
             return [...content].sort((a, b) => {
@@ -3498,7 +3498,7 @@
                 }
             });
         }
-        
+
         // Function to create episode navigation buttons
         function createEpisodeNavigationButtons() {
             elements.prevEpisodeBtn = document.createElement('button');
@@ -3528,7 +3528,7 @@
             const numStars = 5;
             let starsHtml = '<span class="star-rating">';
             // Convert 0-10 scale to 0-5 scale for star calculation
-            const ratingOutOfFive = rating / 2; 
+            const ratingOutOfFive = rating / 2;
 
             for (let i = 0; i < numStars; i++) {
                 if (ratingOutOfFive >= i + 1) {
@@ -3596,7 +3596,7 @@
                 history.replaceState({ page: 'browse' }, 'Browse Content', window.location.pathname + window.location.search);
             });
         }
-        
+
         // Helpers for segmented playlist fetching
         const MAX_PLAYLIST_SEGMENTS = 50; // safety cap
         function getBasePathFromUrl(url) {
@@ -3674,66 +3674,18 @@
             if (!foundAny) return null;
             return mergeCineDataSegments(segments);
         }
-        
-        // Enhanced data fetching with IndexedDB caching
+
         async function fetchData() {
-            let db;
             try {
-                db = await dbUtil.open();
-                const cachedData = await dbUtil.get(db, PLAYLIST_KEY);
-
-                if (cachedData) {
-                    cineData = cachedData;
-                    console.log("✅ Loaded data from IndexedDB cache");
-                    return; // Exit early if we have cached data
+                const response = await fetch('api/content.php');
+                const data = await response.json();
+                if (data.Categories) {
+                    cineData = data;
+                } else {
+                    throw new Error("Invalid data format from API.");
                 }
-
-                console.log("ℹ️ No cache found in IndexedDB. Fetching from network...");
-                elements.progressBarContainer.style.display = 'block';
-                elements.loadingSpinner.style.display = 'none';
-                
-                const primaryUrl = "https://github.com/MovieAddict88/Movie-Source/raw/main/playlist.json";
-                const fallbackUrls = [
-                    "https://raw.githubusercontent.com/MovieAddict88/Movie-Source/main/playlist.json",
-                    "https://cdn.jsdelivr.net/gh/MovieAddict88/Movie-Source@main/playlist.json",
-                    "./playlist.json",
-                    "./data/playlist.json"
-                ];
-                
-                const allCandidateUrls = [primaryUrl, ...fallbackUrls];
-                for (const candidate of allCandidateUrls) {
-                    try {
-                        console.log(`🔎 Trying segmented playlists from: ${getBasePathFromUrl(candidate)}`);
-                        const segmented = await tryFetchSegmented(candidate);
-                        if (segmented && segmented.Categories && segmented.Categories.length > 0) {
-                            cineData = segmented;
-                            await dbUtil.set(db, PLAYLIST_KEY, cineData);
-                            console.log(`✅ Loaded and cached segmented data from base: ${getBasePathFromUrl(candidate)}`);
-                            return;
-                        }
-                    } catch (err) {
-                        console.warn(`⚠️ Segmented fetch failed for ${candidate}`, err);
-                    }
-                    try {
-                        console.log(`🔄 Trying monolithic playlist: ${candidate}`);
-                        elements.progressBarText.textContent = `Trying monolithic playlist...`;
-                        const response = await fetch(withCacheBuster(candidate));
-                        if (response.ok) {
-                            cineData = await response.json();
-                            await dbUtil.set(db, PLAYLIST_KEY, cineData);
-                            console.log(`✅ Loaded and cached data from: ${candidate}`);
-                            return;
-                        }
-                    } catch (err) {
-                        console.warn(`⚠️ Monolithic fetch failed for ${candidate}`, err);
-                    }
-                }
-                
-                throw new Error("All data sources failed");
-                
-            } catch (err) {
-                console.error("❌ All data sources failed:", err);
-                
+            } catch (error) {
+                console.error("Failed to fetch data from API:", error);
                 const errorMessage = document.createElement('div');
                 errorMessage.style.cssText = `
                     position: fixed;
@@ -3749,7 +3701,7 @@
                 `;
                 errorMessage.innerHTML = `
                     <h3>⚠️ Data Loading Failed</h3>
-                    <p>Unable to load content data. Please check your internet connection and try again.</p>
+                    <p>Unable to load content from the server. Please try again later.</p>
                     <button onclick="this.parentElement.remove(); window.location.reload();" style="
                         background: var(--primary);
                         color: white;
@@ -3761,13 +3713,9 @@
                     ">Retry</button>
                 `;
                 document.body.appendChild(errorMessage);
-            } finally {
-                if (db) db.close();
-                elements.progressBarContainer.style.display = 'none';
-                elements.loadingSpinner.style.display = 'none';
             }
         }
-        
+
         // TMDB API function removed - using local data only
 
         // No longer needed, data is pre-enriched
@@ -3779,7 +3727,7 @@
             const shuffled = [...arr].sort(() => 0.5 - Math.random());
             return shuffled.slice(0, Math.min(count, arr.length));
         }
-        
+
         // Render carousel
         function renderCarousel() {
             if (!cineData || !cineData.Categories || cineData.Categories.length < 3) {
@@ -3801,7 +3749,7 @@
                         description: movie.Description,
                         image: movie.Poster,
                         // Store original item for click handling
-                        originalItem: movie 
+                        originalItem: movie
                     });
                 });
             }
@@ -3814,7 +3762,7 @@
                         title: series.Title,
                         description: series.Description || `Popular ${series.SubCategory} series`,
                         image: series.Poster,
-                        originalItem: series 
+                        originalItem: series
                     });
                 });
             }
@@ -3827,7 +3775,7 @@
                         title: live.Title,
                         description: live.Description,
                         image: live.Poster,
-                        originalItem: live 
+                        originalItem: live
                     });
                 });
             }
@@ -3885,7 +3833,7 @@
                 });
             });
         }
-        
+
         // Render content filters
         function renderContentFilters() {
             if (!cineData || !cineData.Categories) return;
@@ -3938,7 +3886,7 @@
                 yearFilter.appendChild(option);
             });
         }
-        
+
         // Render content based on filters
         async function renderContent(category = 'all') {
             if (!cineData || !cineData.Categories) return;
@@ -4059,7 +4007,7 @@
 
             setupLazyLoading();
         }
-        
+
         // Create a content card
         function createContentCard(item, viewType) {
             const card = document.createElement('div');
@@ -4100,7 +4048,7 @@
                     </div>
                     <div class="card-meta">
                         ${generateStarRating(item.Rating)}
-                        ${viewType === 'list' ? 
+                        ${viewType === 'list' ?
                             `<span class="meta-netflix-style">
                                 ${item.Year ? `<span>${item.Year}</span>` : ''}
                                 ${item.Country ? `<span class="meta-country">${getCountryFlagHtml(item.Country)} ${item.Country}</span>` : ''}
@@ -4359,7 +4307,7 @@
                 elements.relatedGrid.innerHTML = '';
                 const relatedContent = cachedContent.filter(item => item.Title !== content.Title)
                                                .sort(() => 0.5 - Math.random()).slice(0, 8);
-                relatedContent.forEach(item => { /* ... render related card ... */ 
+                relatedContent.forEach(item => { /* ... render related card ... */
                     const card = document.createElement('div');
                     card.className = 'related-card';
                     const ratingHtml = generateStarRating(item.Rating);
@@ -6762,38 +6710,38 @@ async function switchToServer(server, allServers) {
             if (servers && servers.length > 0) {
                 // Use DRM-aware server selection
                 const optimalServer = selectOptimalServer(servers);
-                
+
                 if (optimalServer) {
                     // Check for special URLs first
                     if (isVidsrcUrl(optimalServer.url) || isVidjoyUrl(optimalServer.url) || isVidsrcMeUrl(optimalServer.url) || isVidsrcToUrl(optimalServer.url) || isVidsrcXyzUrl(optimalServer.url) || isGoDrivePlayerUrl(optimalServer.url) || isVidLinkProUrl(optimalServer.url) || is2EmbedUrl(optimalServer.url) || isEmbedSuUrl(optimalServer.url) || isAutoEmbedUrl(optimalServer.url) || isVideasyUrl(optimalServer.url) || isMegaNzUrl(optimalServer.url) || isGoogleDriveUrl(optimalServer.url)) {
                         playUrl(optimalServer.url, servers);
                         return;
                     }
-                    
+
                     // Handle MPD files with enhanced DRM support
                     if (optimalServer.url.includes('.mpd')) {
                         await handleMPDStream(optimalServer.url, servers);
                         return;
                     }
-                    
+
                     // Handle regular video sources
                     const sources = servers.map(server => ({
                         src: server.url,
                         size: parseInt(server.name?.replace(/\D/g, '') || '0'),
                         type: server.url.includes('m3u8') ? 'application/x-mpegURL' : 'video/mp4'
                     }));
-                    
+
                     playerInstance.source = {
                         type: 'video',
                         sources: sources,
                     };
-                    
+
                     // Ensure stretch button persists after source change
                     addStretchButtonToPlayer();
-                    
+
                     // Update in-page server dropdown for multiple servers
                     updateServerDropdown(servers, optimalServer);
-                    
+
                     // Add error handling for automatic server switching
                     playerInstance.on('error', async (event) => {
                         console.log('Player error detected, trying next server...');

@@ -1,0 +1,13 @@
+<?php
+/*
+ * Database Configuration
+ *
+ * Please fill in your database credentials below.
+ * The install.php script will use this file to create the final config.php
+ */
+
+define('DB_HOST', 'localhost');
+define('DB_USERNAME', 'your_database_user');
+define('DB_PASSWORD', 'your_database_password');
+define('DB_NAME', 'cinecraze_db');
+?>
